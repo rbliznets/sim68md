@@ -1,0 +1,9 @@
+menu "SIM68MD"
+
+    config SIM68MD_SYNC_TIME
+        bool "Enable sync time."
+        default y
+        help
+            Установка системного времени из данных GPS.
+                                                       
+endmenu
