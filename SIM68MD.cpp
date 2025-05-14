@@ -128,7 +128,7 @@ void SIM68MD::initUart()
 		ESP_ERROR_CHECK(uart_set_pin(mConfig.port, mConfig.pin_tx, mConfig.pin_rx, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
 
 		/* Set pattern interrupt, used to detect the end of a line */
-		ESP_ERROR_CHECK(uart_enable_pattern_det_baud_intr(mConfig.port, '\n', 1, 9, 0, 0));
+		ESP_ERROR_CHECK(uart_enable_pattern_det_baud_intr(mConfig.port, '\n', 1, 5, 0, 0));
 		/* Set pattern queue size */
 		ESP_ERROR_CHECK(uart_pattern_queue_reset(mConfig.port, GPS_EVEN_BUF));
 		ESP_ERROR_CHECK(uart_flush(mConfig.port));
@@ -252,28 +252,33 @@ void SIM68MD::run()
 						break;
 					case UART_PATTERN_DET:
 						pos = uart_pattern_pop_pos(mConfig.port);
-						if ((pos != -1) && (pos < (GPS_NMEA_BUF - 2)))
+						while (pos != -1)
 						{
-							read_len = uart_read_bytes(mConfig.port, mBuf, pos + 1, 0);
-							if (read_len > 0)
+							if (pos < (GPS_NMEA_BUF - 2))
 							{
-								mBuf[read_len] = '\0';
-								if (mBuf[1] != 'P')
+								read_len = uart_read_bytes(mConfig.port, mBuf, pos + 1, 0);
+								if (read_len > 0)
 								{
-									gps_decode(mBuf, read_len);
+									mBuf[read_len] = '\0';
+									if (mBuf[1] != 'P')
+									{
+										gps_decode(mBuf, read_len);
+									}
+									ESP_LOGD(GPS_TAG, "%s", mBuf);
 								}
-								ESP_LOGD(GPS_TAG, "%s", mBuf);
+								else
+								{
+									uart_flush_input(mConfig.port);
+									ESP_LOGE(GPS_TAG, "uart_read_bytes error");
+								}
 							}
 							else
 							{
-								ESP_LOGE(GPS_TAG, "uart_read_bytes error");
 								uart_flush_input(mConfig.port);
+								ESP_LOGW(GPS_TAG, "Pattern Queue Size too small %d", pos);
+								break;
 							}
-						}
-						else
-						{
-							ESP_LOGW(GPS_TAG, "Pattern Queue Size too small");
-							uart_flush_input(mConfig.port);
+							pos = uart_pattern_pop_pos(mConfig.port);
 						}
 						break;
 					default:
