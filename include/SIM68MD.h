@@ -2,7 +2,7 @@
 	\file
 	\brief Класс управления GPS-модулем SIM68MD через UART.
 	\authors Близнец Р.А. (r.bliznets@gmail.com)
-	\version 1.2.0.0
+	\version 1.3.0.0
 	\date 16.11.2023
 */
 
@@ -79,10 +79,16 @@ struct SGPSData
  */
 typedef void onGPS(SGPSData *gps, EGPSMode run);
 
+class SIM68MD;
+/// @brief Функция на отказ устройства
+/// @param device - указатель на устройство.
+typedef void onGPSFailed(SIM68MD *device);
+
 /// Конфигурационные параметры драйвера SIM68MD
 struct SGPSConfig
 {
 	onGPS *onDataRx = nullptr; ///< Callback-функция для обработки новых данных
+	onGPSFailed *onFailed = nullptr;  ///< callback на отказ устройства
 
 	uint8_t cpu = 1;   ///< Ядро процессора для запуска задачи (0/1)
 	uint8_t prior = 2; ///< Приоритет задачи (чем выше, тем приоритетнее)
@@ -117,7 +123,7 @@ protected:
 
 	EGPSMode mRun = EGPSMode::Unknown; ///< Текущий режим работы модуля
 	uint32_t mWaitTime = 0;			   ///< Время ожидания следующего события
-	uint32_t mSearchTime = 0;		   ///< Максимальное время поиска спутников (мс)
+	uint32_t mSearchTime = 0;		   ///< Максимальное время поиска спутников (с)
 
 	/// Инициализация UART и запуск модуля
 	void initUart();
@@ -135,8 +141,10 @@ protected:
 	/*!
 	  \param[in] start Указатель на начало строки
 	  \param[in] length Длина строки в байтах
+	  \return true - удалось декодировать
 	*/
-	void gps_decode(char *start, size_t length);
+	bool gps_decode(char *start, size_t length);
+	uint16_t mCount = 0;///< Счетчик NMEA
 
 	/// Приватный конструктор (реализация паттерна Singleton)
 	/*!

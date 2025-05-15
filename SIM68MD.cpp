@@ -2,7 +2,7 @@
 	\file
 	\brief Класс управления SIM68MD через UART.
 	\authors Близнец Р.А. (r.bliznets@gmail.com)
-	\version 1.2.0.0
+	\version 1.3.0.0
 	\date 16.11.2023
 */
 
@@ -190,6 +190,7 @@ void SIM68MD::run()
 	STaskMessage msg;
 	QueueSetMemberHandle_t xActivatedMember;
 	time_t start_time;
+	time_t count_time = 0;
 
 	for (;;)
 	{
@@ -262,7 +263,10 @@ void SIM68MD::run()
 									mBuf[read_len] = '\0';
 									if (mBuf[1] != 'P')
 									{
-										gps_decode(mBuf, read_len);
+										if (gps_decode(mBuf, read_len))
+										{
+											mCount++;
+										}
 									}
 									ESP_LOGD(GPS_TAG, "%s", mBuf);
 								}
@@ -330,19 +334,47 @@ void SIM68MD::run()
 			TDEC("free gps stack", m2);
 		}
 #endif
+		if (mRun == EGPSMode::Run)
+		{
+			time_t now;
+			time(&now);
+			if (count_time == 0)
+			{
+				count_time = now;
+				mCount = 0;
+			}
+			else
+			{
+				if ((now - count_time) > 1)
+				{
+					count_time = now;
+					if (mCount == 0)
+					{
+						if (mConfig.onFailed != nullptr)
+							mConfig.onFailed(this);
+					}
+					else
+						mCount = 0;
+				}
+			}
+		}
+		else
+		{
+			count_time = 0;
+		}
 	}
 endTask:
 	deinitUart(true);
 	xQueueRemoveFromSet(mTaskQueue, mQueueSet);
 }
 
-void SIM68MD::gps_decode(char *start, size_t length)
+bool SIM68MD::gps_decode(char *start, size_t length)
 {
 	ESP_LOGD(GPS_TAG, "%s", start);
 	nmea_s *data = nmea_parse(start, length, 1);
 	if (data == NULL)
 	{
-		return;
+		return false;
 	}
 	else
 	{
@@ -438,4 +470,5 @@ void SIM68MD::gps_decode(char *start, size_t length)
 		}
 		nmea_free(data);
 	}
+	return true;
 }
