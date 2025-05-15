@@ -179,7 +179,7 @@ public:
 
 	/// Запуск работы GPS-модуля
 	/*!
-	  \param[in] sleep Максимальное время поиска спутников (мс). 0 - без ограничений
+	  \param[in] sleep Максимальное время поиска спутников (с). 0 - без ограничений
 	  \return true - команда успешно отправлена
 	*/
 	inline bool start(uint32_t sleep = 0) { return sendCmd(MSG_GPS_ON, 0, sleep); };
@@ -187,7 +187,7 @@ public:
 	/// Остановка работы GPS-модуля
 	/*!
 	  \param[in] rtc Режим отключения (true - RTC, false - sleep)
-	  \param[in] wakeUp Время до автоматического пробуждения (мс). 0 - отключение
+	  \param[in] wakeUp Время до автоматического пробуждения (с). 0 - отключение
 	  \return true - команда успешно отправлена
 	*/
 	inline bool stop(bool rtc = false, uint32_t wakeUp = 0) { return sendCmd(MSG_GPS_OFF, rtc, wakeUp); };
