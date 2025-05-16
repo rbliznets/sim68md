@@ -17,9 +17,11 @@
 // Тег для логирования GPS-событий
 static const char *GPS_TAG = "gps";
 // Команды для управления модулем SIM68MD
-static const char *cmd_on = "\r\n"; // Команда включения
-static const char *cmd_off = "$PMTK161,1*29\r\n";
-static const char *cmd_rtc = "$PMTK161,0*28\r\n"; // Команда перехода в RTC режим
+static const char *cmd_on = "$\r\n"; // Команда включения
+static const char *cmd_off = "$PMTK161,1*29\r\n"; // Команда перехода в Standby режим
+static const char *cmd_rtc = "$PMTK161,0*28\r\n"; // Команда перехода в Backup режим
+static const char *cmd_on1 = "$PMTK225,0*2B\r\n$PMTK225,8*23\r\n"; // Команда перехода в AlwaysLocate Standby режим
+static const char *cmd_on2 = "$PMTK225,0*2B\r\n$PMTK225,9*22\r\n"; // Команда перехода в AlwaysLocate Backup режим
 
 // Единственный экземпляр класса (Singleton pattern)
 SIM68MD *SIM68MD::theSingleInstance = nullptr;
@@ -92,6 +94,8 @@ SIM68MD::SIM68MD(SGPSConfig *cfg) : CBaseTask()
 		gpio_set_direction((gpio_num_t)mConfig.pin_eint0, GPIO_MODE_OUTPUT);
 		gpio_set_pull_mode((gpio_num_t)mConfig.pin_eint0, GPIO_PULLDOWN_ONLY);
 		gpio_set_level((gpio_num_t)mConfig.pin_eint0, 0);
+
+		vTaskDelay(pdMS_TO_TICKS(15));
 	}
 
 	// Настройка UART-пинов
@@ -172,10 +176,9 @@ void SIM68MD::initUart()
 		{
 			gpio_set_level((gpio_num_t)mConfig.pin_eint_in, 0);
 			gpio_set_level((gpio_num_t)mConfig.pin_eint0, 1);
-			vTaskDelay(pdMS_TO_TICKS(12));
+			vTaskDelay(pdMS_TO_TICKS(15));
 			gpio_set_level((gpio_num_t)mConfig.pin_eint_in, 1);
 			gpio_set_level((gpio_num_t)mConfig.pin_eint0, 0);
-			// vTaskDelay(pdMS_TO_TICKS(12));
 		}
 		// Отправка команды включения
 		uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
@@ -300,7 +303,7 @@ void SIM68MD::run()
 						xQueueReset(m_uart_queue);
 						break;
 					case UART_BREAK:
-						ESP_LOGW(GPS_TAG, "Rx Break");
+						ESP_LOGD(GPS_TAG, "Rx Break");
 						break;
 					case UART_PARITY_ERR:
 						ESP_LOGE(GPS_TAG, "Parity Error");
@@ -367,7 +370,19 @@ void SIM68MD::run()
 							mWaitTime = mSearchTime;
 						}
 						else
+						{
 							mWaitTime = 0;
+							if (mConfig.pin_eint0 >= 0)
+							{
+								uart_write_bytes(mConfig.port, cmd_on2, strlen(cmd_on2));
+								ESP_LOGD(GPS_TAG, "send %s", cmd_on2);
+							}
+							else
+							{
+								uart_write_bytes(mConfig.port, cmd_on1, strlen(cmd_on1));
+								ESP_LOGD(GPS_TAG, "send %s", cmd_on1);
+							}
+						}
 						break;
 					case MSG_GPS_OFF:
 						// Деактивация GPS
