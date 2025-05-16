@@ -1,9 +1,10 @@
 /*!
-	\file
-	\brief Класс управления GPS-модулем SIM68MD через UART.
+	\file SIM68MD.h
+	\brief Драйвер для управления GPS-модулем SIM68MD через UART-интерфейс.
 	\authors Близнец Р.А. (r.bliznets@gmail.com)
 	\version 1.3.0.0
-	\date 16.11.2023
+	\date 16 ноября 2023 г.
+	\warning Для работы требуется ESP-IDF с поддержкой FreeRTOS и аппаратного UART
 */
 
 #pragma once
@@ -21,174 +22,178 @@
 #include "gpgsa.h"
 
 // Конфигурационные параметры UART
-#define GPS_TX_BUF (128 + 16)		   ///< Размер буфера UART на передачу (байт).
-#define GPS_NMEA_BUF (256)			   ///< Максимальный размер строки NMEA (байт).
-#define GPS_RX_BUF (GPS_NMEA_BUF + 64) ///< Размер буфера UART на прием (байт).
-#define GPS_EVEN_BUF (10)			   ///< Размер очереди событий UART.
+#define GPS_TX_BUF (128 + 16)		   ///< Размер передающего буфера UART (байт)
+#define GPS_NMEA_BUF 256			   ///< Максимальная длина NMEA-строки (байт)
+#define GPS_RX_BUF (GPS_NMEA_BUF + 64) ///< Размер приемного буфера UART (байт)
+#define GPS_EVEN_BUF 10				   ///< Глубина очереди событий UART
 
-// Настройка максимального времени блокировки задачи для совместимости с Watchdog Timer
+// Настройка таймаута задачи для совместимости с Watchdog Timer
 #ifdef CONFIG_ESP_TASK_WDT
 #define TASK_MAX_BLOCK_TIME pdMS_TO_TICKS((CONFIG_ESP_TASK_WDT_TIMEOUT_S - 1) * 1000 + 500)
 #else
-#define TASK_MAX_BLOCK_TIME portMAX_DELAY
+#define TASK_MAX_BLOCK_TIME portMAX_DELAY ///< Максимальное время блокировки задачи
 #endif
 
-// Коды команд для управления задачей GPS
-#define MSG_END_TASK (0) ///< Команда завершения работы задачи
-#define MSG_GPS_ON (10)	 ///< Команда включения GPS-модуля
-#define MSG_GPS_OFF (11) ///< Команда выключения GPS-модуля
+// Команды управления задачей GPS
+#define MSG_END_TASK 0 ///< Принудительное завершение задачи
+#define MSG_GPS_ON 10  ///< Активация GPS с параметрами поиска
+#define MSG_GPS_OFF 11 ///< Деактивация GPS с выбором режима
 
 // Параметры задачи обработки GPS
-#define GPSTASK_NAME "gps"				   ///< Идентификатор задачи для отладки
+#define GPSTASK_NAME "gps"				   ///< Идентификатор задачи в отладке
 #define GPSTASK_STACKSIZE (2 * 1024 + 512) ///< Размер стека задачи (байт)
-#define GPSTASK_LENGTH (10)				   ///< Размер очереди сообщений задачи
+#define GPSTASK_LENGTH 10				   ///< Вместимость очереди сообщений
 
-/// Состояния работы GPS-модуля
+/// Режимы работы GPS-модуля
 enum class EGPSMode
 {
-	Unknown, ///< Начальное состояние после сброса
-	Run,	 ///< Активный режим работы
-	Sleep,	 ///< Режим пониженного энергопотребления
-	RTC		 ///< Полное выключение с сохранением данных в RTC
+	Unknown, ///< Неинициализированное состояние
+	Run,	 ///< Активный режим с передачей данных
+	Sleep,	 ///< Энергосберегающий режим с пробуждением по прерыванию
+	RTC		 ///< Глубокий сон с питанием только часов реального времени
 };
 
-/// Структура географической позиции
+/// Географические координаты в формате NMEA
 struct SPosition
 {
-	int16_t degrees; ///< Градусы координаты (целая часть)
-	float minutes;	 ///< Минуты координаты (дробная часть)
-	char cardinal;	 ///< Направление (N - север, S - юг, W - запад, E - восток)
+	int16_t degrees; ///< Целая часть координаты в градусах
+	float minutes;	 ///< Дробная часть в минутах (0.0′ - 59.9999′)
+	char cardinal;	 ///< Направление: 'N', 'S', 'E' или 'W'
 };
 
-/// Структура данных, получаемых от GPS-модуля
+/// Данные, полученные от GPS-модуля
 struct SGPSData
 {
-	uint8_t valid;		 ///< Тип позиционирования (0-8, см. документацию NMEA)
-	uint8_t satellites;	 ///< Количество используемых спутников
-	time_t time;		 ///< Временная метка (UTC)
-	SPosition longitude; ///< Координата долготы
-	SPosition latitude;	 ///< Координата широты
+	uint8_t valid;		 ///< Статус позиционирования (0-недействительно)
+	uint8_t satellites;	 ///< Число захваченных спутников (0-12)
+	time_t time;		 ///< Время в формате UNIX (UTC)
+	SPosition longitude; ///< Долгота (от -180° до +180°)
+	SPosition latitude;	 ///< Широта (от -90° до +90°)
 	float altitude;		 ///< Высота над уровнем моря (метры)
-	float hdop;			 ///< Горизонтальная погрешность (HDOP)
+	float hdop;			 ///< Горизонтальная погрешность позиционирования
 };
 
-/// Тип функции обратного вызова при обновлении GPS-данных
+/// Callback-функция для обработки новых GPS-данных
 /*!
- * \param[in] gps Указатель на структуру с актуальными данными
- * \param[in] run Текущий режим работы модуля
+ * \param[out] gps  Указатель на структуру с обновленными данными
+ * \param[in]  mode Текущий режим работы модуля (из EGPSMode)
  */
-typedef void onGPS(SGPSData *gps, EGPSMode run);
+typedef void onGPS(SGPSData *gps, EGPSMode mode);
 
 class SIM68MD;
-/// @brief Функция на отказ устройства
-/// @param device - указатель на устройство.
+
+/// Callback-функция при отсутствии данных от GPS
+/*!
+ * \param[in] device Указатель на экземпляр драйвера SIM68MD
+ */
 typedef void onGPSFailed(SIM68MD *device);
 
-/// Конфигурационные параметры драйвера SIM68MD
+/// Конфигурация драйвера GPS-модуля
 struct SGPSConfig
 {
-	onGPS *onDataRx = nullptr; ///< Callback-функция для обработки новых данных
-	onGPSFailed *onFailed = nullptr;  ///< callback на отказ устройства
+	onGPS *onDataRx = nullptr;		 ///< Хендлер новых данных (вызывается в контексте задачи)
+	onGPSFailed *onFailed = nullptr; ///< Хендлер ошибок связи
 
-	uint8_t cpu = 1;   ///< Ядро процессора для запуска задачи (0/1)
-	uint8_t prior = 2; ///< Приоритет задачи (чем выше, тем приоритетнее)
+	uint8_t cpu = 1;   ///< Номер ядра процессора (0 или 1)
+	uint8_t prior = 2; ///< Приоритет задачи (0-25, где 25 - наивысший)
 
-	uart_port_t port = UART_NUM_1; ///< Номер UART-порта (UART_NUM_1 по умолчанию)
-	int baudrate = 115200;		   ///< Скорость обмена данными (бод)
+	uart_port_t port = UART_NUM_1; ///< Используемый UART-порт
+	int baudrate = 115200;		   ///< Скорость обмена (бит/с)
 
-	int8_t pin_tx = 17;		 ///< GPIO для передачи данных (TX)
-	int8_t pin_rx = 18;		 ///< GPIO для приема данных (RX)
-	int8_t pin_eint_in = 42; ///< GPIO для внешнего прерывания (EINT_IN)
-	int8_t pin_eint0 = 48;	 ///< GPIO для управления питанием (EINT0)
+	int8_t pin_tx = 17;		 ///< GPIO для TX (UART)
+	int8_t pin_rx = 18;		 ///< GPIO для RX (UART)
+	int8_t pin_eint_in = 42; ///< GPIO для управления питанием (активный LOW)
+	int8_t pin_eint0 = 48;	 ///< GPIO для прерывания пробуждения
 };
 
-/// Класс для работы с GPS-модулем SIM68MD через UART-интерфейс
+/// Класс для работы с SIM68MD (реализация паттерна Singleton)
 class SIM68MD : public CBaseTask
 {
 protected:
-	static SIM68MD *theSingleInstance; ///< Указатель на единственный экземпляр класса (Singleton)
+	static SIM68MD *theSingleInstance; ///< Единственный экземпляр класса
+
 #if CONFIG_PM_ENABLE
-	esp_pm_lock_handle_t mPMLock; ///< Блокировка управления питанием для стабильной работы UART
+	esp_pm_lock_handle_t mPMLock; ///< Блокировка снижения частоты CPU для UART
 #endif
-	SGPSConfig mConfig; ///< Конфигурация драйвера
 
-	SGPSData mData;			  ///< Текущие данные GPS
-	std::tm mTime;			  ///< Локальное время (с учетом временной зоны)
-	bool mEventSend = false;  ///< Флаг необходимости вызова callback-функции
-	bool mFixChanged = false; ///< Флаг изменения статуса позиционирования
+	SGPSConfig mConfig;		  ///< Конфигурационные параметры
+	SGPSData mData;			  ///< Текущие GPS-данные
+	std::tm mTime;			  ///< Временная структура для парсинга
+	bool mEventSend = false;  ///< Флаг необходимости оповещения подписчиков
+	bool mFixChanged = false; ///< Флаг изменения статуса фиксации
 
-	QueueSetHandle_t mQueueSet;			  ///< Набор очередей для обработки событий
-	QueueHandle_t m_uart_queue = nullptr; ///< Очередь событий UART-драйвера
-	char mBuf[GPS_NMEA_BUF];			  ///< Буфер для накопления NMEA-строк
+	QueueSetHandle_t mQueueSet;			  ///< Набор очередей событий
+	QueueHandle_t m_uart_queue = nullptr; ///< Очередь событий UART
+	char mBuf[GPS_NMEA_BUF];			  ///< Буфер для сырых NMEA-данных
 
-	EGPSMode mRun = EGPSMode::Unknown; ///< Текущий режим работы модуля
-	uint32_t mWaitTime = 0;			   ///< Время ожидания следующего события
-	uint32_t mSearchTime = 0;		   ///< Максимальное время поиска спутников (с)
+	EGPSMode mRun = EGPSMode::Unknown; ///< Текущий режим работы
+	uint32_t mWaitTime = 0;			   ///< Таймер ожидания (секунды)
+	uint32_t mSearchTime = 0;		   ///< Макс. время поиска спутников
+	uint16_t mCount = 0;			   ///< Счетчик успешных парсингов NMEA
 
-	/// Инициализация UART и запуск модуля
+	/// Инициализация UART и активация модуля
 	void initUart();
 
-	/// Деинициализация UART и перевод модуля в режим сна
+	/// Деактивация UART с выбором режима энергосбережения
 	/*!
-	  \param[in] rtc Если true - режим глубокого сна (RTC), иначе - обычный сон
-	*/
+	 * \param[in] rtc true - переход в RTC-режим, false - обычный сон
+	 */
 	void deinitUart(bool rtc = false);
 
-	/// Основная функция задачи обработки GPS (переопределение метода CBaseTask)
+	/// Основная функция задачи (наследование от CBaseTask)
 	virtual void run() override;
 
-	/// Разбор NMEA-строки и обновление данных
+	/// Парсинг NMEA-строки и обновление данных
 	/*!
-	  \param[in] start Указатель на начало строки
-	  \param[in] length Длина строки в байтах
-	  \return true - удалось декодировать
-	*/
+	 * \param[in] start  Указатель на начало строки
+	 * \param[in] length Длина строки (байты)
+	 * \return true - данные успешно обновлены
+	 */
 	bool gps_decode(char *start, size_t length);
-	uint16_t mCount = 0;///< Счетчик NMEA
 
-	/// Приватный конструктор (реализация паттерна Singleton)
-	/*!
-	  \param[in] cfg Указатель на структуру конфигурации
-	*/
-	SIM68MD(SGPSConfig *cfg);
+	/// Приватный конструктор (Singleton)
+	explicit SIM68MD(SGPSConfig *cfg);
 
-	/// Деструктор
+	/// Деструктор с освобождением ресурсов
 	virtual ~SIM68MD();
 
-	using CBaseTask::sendCmd;
+	using CBaseTask::sendCmd; // Разрешение доступа к базовому методу
 
 public:
-	/// Получение экземпляра класса (Singleton)
-	/*!
-	  \return Указатель на экземпляр класса или nullptr если не инициализирован
-	*/
-	static SIM68MD *Instance() { return theSingleInstance; };
+	/// Получение экземпляра класса
+	static SIM68MD *Instance() { return theSingleInstance; }
 
-	/// Инициализация экземпляра класса
+	/// Инициализация драйвера
 	/*!
-	  \param[in] cfg Указатель на структуру конфигурации
-	  \return Указатель на созданный экземпляр
-	*/
+	 * \param[in] cfg Конфигурация модуля
+	 * \return Указатель на созданный экземпляр
+	 */
 	static SIM68MD *init(SGPSConfig *cfg);
 
-	/// Освобождение ресурсов экземпляра класса
+	/// Деинициализация драйвера
 	static void free();
 
-	/// Проверка активности экземпляра
-	static inline bool isRun() { return (theSingleInstance != nullptr); };
+	/// Проверка активности драйвера
+	static inline bool isRun() { return (theSingleInstance != nullptr); }
 
-	/// Запуск работы GPS-модуля
+	/// Запуск GPS с таймаутом поиска
 	/*!
-	  \param[in] sleep Максимальное время поиска спутников (с). 0 - без ограничений
-	  \return true - команда успешно отправлена
-	*/
-	inline bool start(uint32_t sleep = 0) { return sendCmd(MSG_GPS_ON, 0, sleep); };
+	 * \param[in] search_time Макс. время поиска спутников (0 - без ограничений)
+	 * \return true - команда принята в очередь
+	 */
+	inline bool start(uint32_t search_time = 0)
+	{
+		return sendCmd(MSG_GPS_ON, 0, search_time);
+	}
 
-	/// Остановка работы GPS-модуля
+	/// Остановка GPS с выбором режима
 	/*!
-	  \param[in] rtc Режим отключения (true - RTC, false - sleep)
-	  \param[in] wakeUp Время до автоматического пробуждения (с). 0 - отключение
-	  \return true - команда успешно отправлена
-	*/
-	inline bool stop(bool rtc = false, uint32_t wakeUp = 0) { return sendCmd(MSG_GPS_OFF, rtc, wakeUp); };
+	 * \param[in] rtc_mode true - глубокий сон (RTC), false - обычный
+	 * \param[in] wake_after Время до авто-пробуждения (0 - ручной старт)
+	 * \return true - команда принята в очередь
+	 */
+	inline bool stop(bool rtc_mode = false, uint32_t wake_after = 0)
+	{
+		return sendCmd(MSG_GPS_OFF, rtc_mode, wake_after);
+	}
 };
