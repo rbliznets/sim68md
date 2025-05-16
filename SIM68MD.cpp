@@ -10,15 +10,16 @@
 #include "CDateTimeSystem.h"
 #include "CTrace.h"
 #include "driver/gpio.h"
+#include "esp_private/esp_gpio_reserve.h"
 #include <cstring>
 #include <sys/time.h>
 
 // Тег для логирования GPS-событий
 static const char *GPS_TAG = "gps";
 // Команды для управления модулем SIM68MD
-static const char *cmd_on = "$PAIR002*38\r\n";	  // Команда включения
-static const char *cmd_off = "$PAIR003*39\r\n";	  // Команда выключения
-static const char *cmd_rtc = "$PAIR650,0*25\r\n"; // Команда перехода в RTC режим
+static const char *cmd_on = "\r\n"; // Команда включения
+static const char *cmd_off = "$PMTK161,1*29\r\n";
+static const char *cmd_rtc = "$PMTK161,0*28\r\n"; // Команда перехода в RTC режим
 
 // Единственный экземпляр класса (Singleton pattern)
 SIM68MD *SIM68MD::theSingleInstance = nullptr;
@@ -174,10 +175,10 @@ void SIM68MD::initUart()
 			vTaskDelay(pdMS_TO_TICKS(12));
 			gpio_set_level((gpio_num_t)mConfig.pin_eint_in, 1);
 			gpio_set_level((gpio_num_t)mConfig.pin_eint0, 0);
-			vTaskDelay(pdMS_TO_TICKS(102));
+			// vTaskDelay(pdMS_TO_TICKS(12));
 		}
 		// Отправка команды включения
-		uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on) + 1);
+		uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
 		ESP_LOGD(GPS_TAG, "send %s", cmd_on);
 		mRun = EGPSMode::Run;
 
@@ -202,7 +203,7 @@ void SIM68MD::deinitUart(bool rtc)
 		if (rtc)
 		{
 			// Отправка команды RTC
-			uart_write_bytes(mConfig.port, cmd_rtc, strlen(cmd_rtc) + 1);
+			uart_write_bytes(mConfig.port, cmd_rtc, strlen(cmd_rtc));
 			ESP_LOGD(GPS_TAG, "send %s", cmd_rtc);
 			mRun = EGPSMode::RTC;
 			if ((mConfig.pin_eint_in >= 0) && (mConfig.pin_eint0 >= 0))
@@ -213,7 +214,7 @@ void SIM68MD::deinitUart(bool rtc)
 		else
 		{
 			// Отправка команды выключения
-			uart_write_bytes(mConfig.port, cmd_off, strlen(cmd_off) + 1);
+			uart_write_bytes(mConfig.port, cmd_off, strlen(cmd_off));
 			ESP_LOGD(GPS_TAG, "send %s", cmd_off);
 			mRun = EGPSMode::Sleep;
 			ESP_LOGI(GPS_TAG, "Sleep");
@@ -222,6 +223,7 @@ void SIM68MD::deinitUart(bool rtc)
 		ESP_ERROR_CHECK(uart_wait_tx_done(mConfig.port, pdMS_TO_TICKS(150)));
 		ESP_ERROR_CHECK(uart_driver_delete(mConfig.port));
 		m_uart_queue = nullptr;
+		esp_gpio_revoke(BIT64(mConfig.pin_tx) | BIT64(mConfig.pin_rx));
 		vTaskDelay(pdMS_TO_TICKS(10));
 #if CONFIG_PM_ENABLE
 		esp_pm_lock_release(mPMLock);
@@ -406,7 +408,7 @@ void SIM68MD::run()
 			}
 			else
 			{
-				if ((now - count_time) > 1)
+				if ((now - count_time) > 2)
 				{
 					count_time = now;
 					if (mCount == 0)

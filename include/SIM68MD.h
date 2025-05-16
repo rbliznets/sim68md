@@ -102,8 +102,8 @@ struct SGPSConfig
 
 	int8_t pin_tx = 17;		 ///< GPIO для TX (UART)
 	int8_t pin_rx = 18;		 ///< GPIO для RX (UART)
-	int8_t pin_eint_in = 42; ///< GPIO для управления питанием (активный LOW)
-	int8_t pin_eint0 = 48;	 ///< GPIO для прерывания пробуждения
+	int8_t pin_eint_in = 39; ///< GPIO для управления питанием (активный LOW)
+	int8_t pin_eint0 = 42;	 ///< GPIO для прерывания пробуждения
 };
 
 /// Класс для работы с SIM68MD (реализация паттерна Singleton)
