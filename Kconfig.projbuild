@@ -5,5 +5,22 @@ menu "SIM68MD"
         default y
         help
             Установка системного времени из данных GPS.
+
+    choice
+        prompt "Choose Power down Version"
+        default SIM68MD_PD_1
+        help
+            Выберите версию выключения GPS.
+
+        config SIM68MD_PD_1
+            bool "SIM68MD_PD_1"
+            help
+                Версия $PAIR.
+
+        config SIM68MD_PD_2
+            bool "SIM68MD_PD_2"
+            help
+                Версия $PMTK161
+    endchoice
                                                        
 endmenu
