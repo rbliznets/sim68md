@@ -22,5 +22,12 @@ menu "SIM68MD"
             help
                 Версия $PMTK161
     endchoice
+
+    config SIM68MD_NMEA_TIMEOUT
+        int "NMEA timeout in sec"
+        range 2 600
+        default 2
+        help
+            NMEA timeout in sec.
                                                        
 endmenu

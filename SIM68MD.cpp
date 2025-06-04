@@ -310,10 +310,6 @@ void SIM68MD::run()
 						break;
 					case UART_BREAK:
 						ESP_LOGD(GPS_TAG, "Rx Break");
-#ifndef CONFIG_SIM68MD_PD_1
-						if (mSearchTime == 0)
-							mCount = -1;
-#endif
 						break;
 					case UART_PARITY_ERR:
 						ESP_LOGE(GPS_TAG, "Parity Error");
@@ -435,7 +431,7 @@ void SIM68MD::run()
 			}
 			else
 			{
-				if ((now - count_time) > 3)
+				if ((now - count_time) > CONFIG_SIM68MD_NMEA_TIMEOUT)
 				{
 					count_time = now;
 					if (mCount == 0)
