@@ -29,10 +29,15 @@
 
 // Настройка таймаута задачи для совместимости с Watchdog Timer
 #ifdef CONFIG_ESP_TASK_WDT
+#if CONFIG_ESP_TASK_WDT_TIMEOUT_S > 1
+#define TASK_MAX_BLOCK_TIME pdMS_TO_TICKS(1000)
+#else
 #define TASK_MAX_BLOCK_TIME pdMS_TO_TICKS((CONFIG_ESP_TASK_WDT_TIMEOUT_S - 1) * 1000 + 500)
+#endif
 #else
 #define TASK_MAX_BLOCK_TIME portMAX_DELAY ///< Максимальное время блокировки задачи
 #endif
+
 
 // Команды управления задачей GPS
 #define MSG_END_TASK 0 ///< Принудительное завершение задачи
@@ -129,7 +134,7 @@ protected:
 	EGPSMode mRun = EGPSMode::Unknown; ///< Текущий режим работы
 	uint32_t mWaitTime = 0;			   ///< Таймер ожидания (секунды)
 	uint32_t mSearchTime = 0;		   ///< Макс. время поиска спутников
-	uint16_t mCount = 0;			   ///< Счетчик успешных парсингов NMEA
+	int16_t mCount = 0;			   ///< Счетчик успешных парсингов NMEA
 
 	/// Инициализация UART и активация модуля
 	void initUart();

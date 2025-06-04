@@ -18,13 +18,13 @@
 static const char *GPS_TAG = "gps";
 // Команды для управления модулем SIM68MD
 #ifdef CONFIG_SIM68MD_PD_1
-static const char *cmd_on = "$PAIR002*38\r\n"; // Команда включения
-static const char *cmd_off = "$PAIR003*39\r\n"; // Команда перехода в Standby режим
-static const char *cmd_rtc = "$PAIR650,0*25\r\n";// Команда перехода в Backup режим
+static const char *cmd_on = "$PAIR002*38\r\n";	  // Команда включения
+static const char *cmd_off = "$PAIR003*39\r\n";	  // Команда перехода в Standby режим
+static const char *cmd_rtc = "$PAIR650,0*25\r\n"; // Команда перехода в Backup режим
 #else
-static const char *cmd_on = "$\r\n"; // Команда включения
-static const char *cmd_off = "$PMTK161,1*29\r\n"; // Команда перехода в Standby режим
-static const char *cmd_rtc = "$PMTK161,0*28\r\n"; // Команда перехода в Backup режим
+static const char *cmd_on = "$PAIR002*38\r\n";					   // Команда включения
+static const char *cmd_off = "$PMTK161,1*29\r\n";				   // Команда перехода в Standby режим
+static const char *cmd_rtc = "$PMTK161,0*28\r\n";				   // Команда перехода в Backup режим
 static const char *cmd_on1 = "$PMTK225,0*2B\r\n$PMTK225,8*23\r\n"; // Команда перехода в AlwaysLocate Standby режим
 static const char *cmd_on2 = "$PMTK225,0*2B\r\n$PMTK225,9*22\r\n"; // Команда перехода в AlwaysLocate Backup режим
 #endif // DEBUG
@@ -310,6 +310,10 @@ void SIM68MD::run()
 						break;
 					case UART_BREAK:
 						ESP_LOGD(GPS_TAG, "Rx Break");
+#ifndef CONFIG_SIM68MD_PD_1
+						if (mSearchTime == 0)
+							mCount = -1;
+#endif
 						break;
 					case UART_PARITY_ERR:
 						ESP_LOGE(GPS_TAG, "Parity Error");
@@ -431,7 +435,7 @@ void SIM68MD::run()
 			}
 			else
 			{
-				if ((now - count_time) > 2)
+				if ((now - count_time) > 3)
 				{
 					count_time = now;
 					if (mCount == 0)
@@ -440,7 +444,7 @@ void SIM68MD::run()
 						if (mConfig.onFailed != nullptr)
 							mConfig.onFailed(this);
 					}
-					else
+					else if (mCount > 0)
 						mCount = 0;
 				}
 			}
