@@ -18,10 +18,13 @@
 static const char *TAG = "gps";
 // Команды для управления модулем SIM68MD
 #ifdef CONFIG_SIM68MD_PD_1
-static const char *cmd_on = "$PAIR002*38\r\n";	  // Команда включения
+static const char *cmd_on = "$PAIR002*38\r\n"; // Команда включения
+static const char *cmd_hot_on = "$PAIR004*3E\r\n";
 static const char *cmd_off = "$PAIR003*39\r\n";	  // Команда перехода в Standby режим
 static const char *cmd_rtc = "$PAIR650,0*25\r\n"; // Команда перехода в Backup режим
 static const char *cmd_auto_saving_enable = "$PAIR490,1*2A\r\n$PAIR510,1*23\r\n";
+
+bool SIM68MD::firstStart = true;
 #else
 static const char *cmd_on = "$PAIR002*38\r\n";					   // Команда включения
 static const char *cmd_off = "$PMTK161,1*29\r\n";				   // Команда перехода в Standby режим
@@ -187,11 +190,18 @@ void SIM68MD::initUart()
 			gpio_set_level((gpio_num_t)mConfig.pin_eint_in, 1);
 			gpio_set_level((gpio_num_t)mConfig.pin_eint0, 0);
 		}
+#ifdef CONFIG_SIM68MD_PD_1
+		if (firstStart)
+		{
+			uart_write_bytes(mConfig.port, cmd_hot_on, strlen(cmd_on));
+			ESP_LOGD(TAG, "send %s", cmd_on);
+			firstStart = false;
+		}
+#endif
 		// Отправка команды включения
 		uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
 		ESP_LOGD(TAG, "send %s", cmd_on);
 		mRun = EGPSMode::Run;
-
 		// Сброс данных и флагов
 		mEventSend = false;
 		std::memset(&mData, 0, sizeof(SGPSData));
