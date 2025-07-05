@@ -15,12 +15,13 @@
 #include <sys/time.h>
 
 // Тег для логирования GPS-событий
-static const char *GPS_TAG = "gps";
+static const char *TAG = "gps";
 // Команды для управления модулем SIM68MD
 #ifdef CONFIG_SIM68MD_PD_1
 static const char *cmd_on = "$PAIR002*38\r\n";	  // Команда включения
 static const char *cmd_off = "$PAIR003*39\r\n";	  // Команда перехода в Standby режим
 static const char *cmd_rtc = "$PAIR650,0*25\r\n"; // Команда перехода в Backup режим
+static const char *cmd_auto_saving_enable = "$PAIR490,1*2A\r\n$PAIR510,1*23\r\n";
 #else
 static const char *cmd_on = "$PAIR002*38\r\n";					   // Команда включения
 static const char *cmd_off = "$PMTK161,1*29\r\n";				   // Команда перехода в Standby режим
@@ -188,13 +189,13 @@ void SIM68MD::initUart()
 		}
 		// Отправка команды включения
 		uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
-		ESP_LOGD(GPS_TAG, "send %s", cmd_on);
+		ESP_LOGD(TAG, "send %s", cmd_on);
 		mRun = EGPSMode::Run;
 
 		// Сброс данных и флагов
 		mEventSend = false;
 		std::memset(&mData, 0, sizeof(SGPSData));
-		ESP_LOGI(GPS_TAG, "Run");
+		ESP_LOGI(TAG, "Run");
 	}
 }
 
@@ -213,20 +214,20 @@ void SIM68MD::deinitUart(bool rtc)
 		{
 			// Отправка команды RTC
 			uart_write_bytes(mConfig.port, cmd_rtc, strlen(cmd_rtc));
-			ESP_LOGD(GPS_TAG, "send %s", cmd_rtc);
+			ESP_LOGD(TAG, "send %s", cmd_rtc);
 			mRun = EGPSMode::RTC;
 			if ((mConfig.pin_eint_in >= 0) && (mConfig.pin_eint0 >= 0))
-				ESP_LOGI(GPS_TAG, "RTC");
+				ESP_LOGI(TAG, "RTC");
 			else
-				ESP_LOGW(GPS_TAG, "RTC without exit");
+				ESP_LOGW(TAG, "RTC without exit");
 		}
 		else
 		{
 			// Отправка команды выключения
 			uart_write_bytes(mConfig.port, cmd_off, strlen(cmd_off));
-			ESP_LOGD(GPS_TAG, "send %s", cmd_off);
+			ESP_LOGD(TAG, "send %s", cmd_off);
 			mRun = EGPSMode::Sleep;
-			ESP_LOGI(GPS_TAG, "Sleep");
+			ESP_LOGI(TAG, "Sleep");
 		}
 		// Завершение работы UART
 		ESP_ERROR_CHECK(uart_wait_tx_done(mConfig.port, pdMS_TO_TICKS(150)));
@@ -250,7 +251,6 @@ void SIM68MD::run()
 #endif
 	STaskMessage msg;
 	QueueSetMemberHandle_t xActivatedMember;
-	time_t start_time;
 	time_t count_time = 0;
 
 	for (;;)
@@ -260,7 +260,7 @@ void SIM68MD::run()
 		{
 			time_t now;
 			time(&now);
-			if ((now - start_time) > mWaitTime)
+			if ((now - mStart_time) > mWaitTime)
 			{
 				mWaitTime = 0;
 				if (mRun == EGPSMode::Run)
@@ -276,7 +276,7 @@ void SIM68MD::run()
 					initUart();
 					if (mSearchTime > 0)
 					{
-						time(&start_time);
+						time(&mStart_time);
 						mWaitTime = mSearchTime;
 					}
 				}
@@ -299,23 +299,23 @@ void SIM68MD::run()
 					case UART_DATA:
 						break;
 					case UART_FIFO_OVF:
-						ESP_LOGW(GPS_TAG, "HW FIFO Overflow");
+						ESP_LOGW(TAG, "HW FIFO Overflow");
 						uart_flush(mConfig.port);
 						xQueueReset(m_uart_queue);
 						break;
 					case UART_BUFFER_FULL:
-						ESP_LOGW(GPS_TAG, "Ring Buffer Full");
+						ESP_LOGW(TAG, "Ring Buffer Full");
 						uart_flush(mConfig.port);
 						xQueueReset(m_uart_queue);
 						break;
 					case UART_BREAK:
-						ESP_LOGD(GPS_TAG, "Rx Break");
+						ESP_LOGD(TAG, "Rx Break");
 						break;
 					case UART_PARITY_ERR:
-						ESP_LOGE(GPS_TAG, "Parity Error");
+						ESP_LOGE(TAG, "Parity Error");
 						break;
 					case UART_FRAME_ERR:
-						ESP_LOGE(GPS_TAG, "Frame Error");
+						ESP_LOGE(TAG, "Frame Error");
 						break;
 					case UART_PATTERN_DET:
 						// Обработка паттерна конца строки
@@ -328,7 +328,7 @@ void SIM68MD::run()
 								if (read_len > 0)
 								{
 									mBuf[read_len] = '\0';
-									ESP_LOGD(GPS_TAG, "%s", mBuf);
+									ESP_LOGD(TAG, "%s", mBuf);
 									if (mBuf[1] != 'P')
 									{
 										// Декодирование NMEA-сообщения
@@ -337,24 +337,28 @@ void SIM68MD::run()
 											mCount++;
 										}
 									}
+									// else
+									// {
+									// 	ESP_LOGI(TAG, "%s", mBuf);
+									// }
 								}
 								else
 								{
 									uart_flush_input(mConfig.port);
-									ESP_LOGE(GPS_TAG, "uart_read_bytes error");
+									ESP_LOGE(TAG, "uart_read_bytes error");
 								}
 							}
 							else
 							{
 								uart_flush_input(mConfig.port);
-								ESP_LOGW(GPS_TAG, "Pattern Queue Size too small %d", pos);
+								ESP_LOGW(TAG, "Pattern Queue Size too small %d", pos);
 								break;
 							}
 							pos = uart_pattern_pop_pos(mConfig.port);
 						}
 						break;
 					default:
-						ESP_LOGW(GPS_TAG, "unknown uart event type: %d", event.type);
+						ESP_LOGW(TAG, "unknown uart event type: %d", event.type);
 						break;
 					}
 				}
@@ -372,8 +376,8 @@ void SIM68MD::run()
 						mSearchTime = msg.paramID;
 						if (mSearchTime > 0)
 						{
-							time(&start_time);
-							mWaitTime = mSearchTime;
+							time(&mStart_time);
+							mWaitTime = 2 * mSearchTime;
 						}
 						else
 						{
@@ -382,12 +386,12 @@ void SIM68MD::run()
 							if (mConfig.pin_eint0 >= 0)
 							{
 								uart_write_bytes(mConfig.port, cmd_on2, strlen(cmd_on2));
-								ESP_LOGD(GPS_TAG, "send %s", cmd_on2);
+								ESP_LOGD(TAG, "send %s", cmd_on2);
 							}
 							else
 							{
 								uart_write_bytes(mConfig.port, cmd_on1, strlen(cmd_on1));
-								ESP_LOGD(GPS_TAG, "send %s", cmd_on1);
+								ESP_LOGD(TAG, "send %s", cmd_on1);
 							}
 #endif
 						}
@@ -397,14 +401,14 @@ void SIM68MD::run()
 						deinitUart(msg.shortParam != 0);
 						if (msg.paramID > 0)
 						{
-							time(&start_time);
+							time(&mStart_time);
 							mWaitTime = msg.paramID;
 						}
 						break;
 					case MSG_END_TASK:
 						goto endTask;
 					default:
-						ESP_LOGW(GPS_TAG, "unknown message %d", msg.msgID);
+						ESP_LOGW(TAG, "unknown message %d", msg.msgID);
 						break;
 					}
 				}
@@ -473,7 +477,7 @@ bool SIM68MD::gps_decode(char *start, size_t length)
 	{
 		if (data->errors != 0)
 		{
-			ESP_LOGW(GPS_TAG, "The sentence struct contains parse errors!");
+			ESP_LOGW(TAG, "The sentence struct contains parse errors!");
 		}
 		else
 		{
@@ -488,8 +492,8 @@ bool SIM68MD::gps_decode(char *start, size_t length)
 					mData.valid = gpgga->position_fix;
 					mEventSend = true;
 					mFixChanged = true;
-					if (mData.valid > 0)
-						mWaitTime = 0;
+					// if (mData.valid > 0)
+					// 	mWaitTime = 0;
 				}
 				// Обновление информации о спутниках и высоте
 				if (mData.satellites != gpgga->n_satellites)
@@ -555,7 +559,15 @@ bool SIM68MD::gps_decode(char *start, size_t length)
 						// Синхронизация системного времени
 						if (mData.valid != 0)
 						{
-							CDateTimeSystem::setDateTime(mData.time);
+							if (CDateTimeSystem::setDateTime(mData.time))
+							{
+								time(&mStart_time);
+								mWaitTime = mSearchTime;
+#ifndef CONFIG_SIM68MD_PD_2
+								uart_write_bytes(mConfig.port, cmd_auto_saving_enable, strlen(cmd_auto_saving_enable));
+								ESP_LOGI(TAG, "send %s", cmd_rtc);
+#endif
+							}
 						}
 #endif
 					}
