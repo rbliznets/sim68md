@@ -104,8 +104,6 @@ SIM68MD::SIM68MD(SGPSConfig *cfg) : CBaseTask()
 		gpio_set_direction((gpio_num_t)mConfig.pin_eint0, GPIO_MODE_OUTPUT);
 		gpio_set_pull_mode((gpio_num_t)mConfig.pin_eint0, GPIO_PULLDOWN_ONLY);
 		gpio_set_level((gpio_num_t)mConfig.pin_eint0, 0);
-
-		vTaskDelay(pdMS_TO_TICKS(15));
 	}
 
 	// Настройка UART-пинов
@@ -186,7 +184,7 @@ void SIM68MD::initUart()
 		{
 			gpio_set_level((gpio_num_t)mConfig.pin_eint_in, 0);
 			gpio_set_level((gpio_num_t)mConfig.pin_eint0, 1);
-			vTaskDelay(pdMS_TO_TICKS(15));
+			vTaskDelay(pdMS_TO_TICKS(25));
 			gpio_set_level((gpio_num_t)mConfig.pin_eint_in, 1);
 			gpio_set_level((gpio_num_t)mConfig.pin_eint0, 0);
 		}
@@ -262,6 +260,8 @@ void SIM68MD::run()
 	STaskMessage msg;
 	QueueSetMemberHandle_t xActivatedMember;
 	time_t count_time = 0;
+
+	vTaskDelay(pdMS_TO_TICKS(125));
 
 	for (;;)
 	{
