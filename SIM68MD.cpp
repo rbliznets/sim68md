@@ -478,6 +478,7 @@ endTask:
 */
 bool SIM68MD::gps_decode(char *start, size_t length)
 {
+	// std::string str(start,length);
 	nmea_s *data = nmea_parse(start, length, 1);
 	if (data == NULL)
 	{
@@ -502,6 +503,8 @@ bool SIM68MD::gps_decode(char *start, size_t length)
 					mData.valid = gpgga->position_fix;
 					mEventSend = true;
 					mFixChanged = true;
+					// TDEC("mData.valid",mData.valid);
+					// LOG(str.c_str());
 					// if (mData.valid > 0)
 					// 	mWaitTime = 0;
 				}
@@ -573,10 +576,10 @@ bool SIM68MD::gps_decode(char *start, size_t length)
 							{
 								time(&mStart_time);
 								mWaitTime = mSearchTime;
-#ifndef CONFIG_SIM68MD_PD_2
-								uart_write_bytes(mConfig.port, cmd_auto_saving_enable, strlen(cmd_auto_saving_enable));
-								ESP_LOGI(TAG, "send %s", cmd_rtc);
-#endif
+// #ifndef CONFIG_SIM68MD_PD_2
+// 								uart_write_bytes(mConfig.port, cmd_auto_saving_enable, strlen(cmd_auto_saving_enable));
+// 								ESP_LOGI(TAG, "send %s", cmd_rtc);
+// #endif
 							}
 						}
 #endif

@@ -38,7 +38,6 @@
 #define TASK_MAX_BLOCK_TIME portMAX_DELAY ///< Максимальное время блокировки задачи
 #endif
 
-
 // Команды управления задачей GPS
 #define MSG_END_TASK 0 ///< Принудительное завершение задачи
 #define MSG_GPS_ON 10  ///< Активация GPS с параметрами поиска
@@ -140,7 +139,7 @@ protected:
 	uint32_t mSearchTime = 0;		   ///< Макс. время поиска спутников
 	time_t mStart_time;
 
-	int16_t mCount = 0;			   ///< Счетчик успешных парсингов NMEA
+	int16_t mCount = 0; ///< Счетчик успешных парсингов NMEA
 
 	/// Инициализация UART и активация модуля
 	void initUart();
