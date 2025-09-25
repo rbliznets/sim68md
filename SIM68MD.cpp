@@ -338,19 +338,16 @@ void SIM68MD::run()
 								if (read_len > 0)
 								{
 									mBuf[read_len] = '\0';
-									ESP_LOGD(TAG, "%s", mBuf);
+									// ESP_LOGI(TAG, "%s", mBuf);
 									if (mBuf[1] != 'P')
 									{
 										// Декодирование NMEA-сообщения
 										if (gps_decode(mBuf, read_len))
+
 										{
 											mCount++;
 										}
 									}
-									// else
-									// {
-									// 	ESP_LOGI(TAG, "%s", mBuf);
-									// }
 								}
 								else
 								{
@@ -495,6 +492,7 @@ bool SIM68MD::gps_decode(char *start, size_t length)
 			// Обработка различных типов NMEA-сообщений
 			if (NMEA_GPGGA == data->type)
 			{
+				// ESP_LOGI(TAG, "%s", str.c_str());
 				// Обработка данных о местоположении
 				nmea_gpgga_s *gpgga = (nmea_gpgga_s *)data;
 				std::memcpy(&mTime, &gpgga->time, sizeof(tm));
