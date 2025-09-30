@@ -93,24 +93,11 @@ SIM68MD::SIM68MD(SGPSConfig *cfg) : CBaseTask()
 	// Настройка GPIO-пинов прерываний, если они заданы
 	if ((mConfig.pin_eint_in >= 0) && (mConfig.pin_eint0 >= 0))
 	{
-		gpio_iomux_in(mConfig.pin_eint_in, 1);
-		gpio_iomux_out(mConfig.pin_eint_in, 1, false);
-		gpio_set_direction((gpio_num_t)mConfig.pin_eint_in, GPIO_MODE_OUTPUT);
-		gpio_set_pull_mode((gpio_num_t)mConfig.pin_eint_in, GPIO_PULLUP_ONLY);
+		gpio_config_t io_conf = {BIT64(mConfig.pin_eint_in) | BIT64(mConfig.pin_eint0), GPIO_MODE_OUTPUT, GPIO_PULLUP_ENABLE, GPIO_PULLDOWN_DISABLE, GPIO_INTR_DISABLE};
+		gpio_config(&io_conf);
 		gpio_set_level((gpio_num_t)mConfig.pin_eint_in, 1);
-
-		gpio_iomux_in(mConfig.pin_eint0, 1);
-		gpio_iomux_out(mConfig.pin_eint0, 1, false);
-		gpio_set_direction((gpio_num_t)mConfig.pin_eint0, GPIO_MODE_OUTPUT);
-		gpio_set_pull_mode((gpio_num_t)mConfig.pin_eint0, GPIO_PULLDOWN_ONLY);
 		gpio_set_level((gpio_num_t)mConfig.pin_eint0, 0);
 	}
-
-	// Настройка UART-пинов
-	gpio_iomux_in(mConfig.pin_tx, 1);
-	gpio_iomux_out(mConfig.pin_tx, 1, false);
-	gpio_iomux_in(mConfig.pin_rx, 1);
-	gpio_iomux_out(mConfig.pin_rx, 1, false);
 
 	// Инициализация структур данных
 	std::memset(&mData, 0, sizeof(SGPSData));
@@ -135,10 +122,8 @@ SIM68MD::~SIM68MD()
 
 	if ((mConfig.pin_eint_in >= 0) && (mConfig.pin_eint0 >= 0))
 	{
-		gpio_set_pull_mode((gpio_num_t)mConfig.pin_eint_in, GPIO_FLOATING);
-		gpio_set_direction((gpio_num_t)mConfig.pin_eint_in, GPIO_MODE_DISABLE);
-		gpio_set_pull_mode((gpio_num_t)mConfig.pin_eint0, GPIO_FLOATING);
-		gpio_set_direction((gpio_num_t)mConfig.pin_eint0, GPIO_MODE_DISABLE);
+		gpio_config_t io_conf = {BIT64(mConfig.pin_eint_in) | BIT64(mConfig.pin_eint0), GPIO_MODE_DISABLE, GPIO_PULLUP_DISABLE, GPIO_PULLDOWN_DISABLE, GPIO_INTR_DISABLE};
+		gpio_config(&io_conf);
 	}
 }
 
@@ -199,8 +184,8 @@ void SIM68MD::initUart()
 		// Отправка команды включения
 		uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
 		ESP_LOGD(TAG, "send %s", cmd_on);
-		uart_wait_tx_done(mConfig.port,50);
-		
+		uart_wait_tx_done(mConfig.port, 50);
+
 		mRun = EGPSMode::Run;
 		// Сброс данных и флагов
 		mEventSend = false;
@@ -402,7 +387,7 @@ void SIM68MD::run()
 								uart_write_bytes(mConfig.port, cmd_on1, strlen(cmd_on1));
 								ESP_LOGD(TAG, "send %s", cmd_on1);
 							}
-							uart_wait_tx_done(mConfig.port,10);
+							uart_wait_tx_done(mConfig.port, 10);
 #endif
 						}
 						break;
@@ -579,7 +564,7 @@ bool SIM68MD::gps_decode(char *start, size_t length)
 								mWaitTime = mSearchTime;
 #ifndef CONFIG_SIM68MD_PD_2
 								uart_write_bytes(mConfig.port, cmd_auto_saving_enable, strlen(cmd_auto_saving_enable));
-								uart_wait_tx_done(mConfig.port,10);
+								uart_wait_tx_done(mConfig.port, 10);
 								// ESP_LOGI(TAG, "send %s", cmd_rtc);
 #endif
 							}
