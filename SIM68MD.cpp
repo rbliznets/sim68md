@@ -199,6 +199,8 @@ void SIM68MD::initUart()
 		// Отправка команды включения
 		uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
 		ESP_LOGD(TAG, "send %s", cmd_on);
+		uart_wait_tx_done(mConfig.port,50);
+		
 		mRun = EGPSMode::Run;
 		// Сброс данных и флагов
 		mEventSend = false;
@@ -400,6 +402,7 @@ void SIM68MD::run()
 								uart_write_bytes(mConfig.port, cmd_on1, strlen(cmd_on1));
 								ESP_LOGD(TAG, "send %s", cmd_on1);
 							}
+							uart_wait_tx_done(mConfig.port,10);
 #endif
 						}
 						break;
@@ -574,10 +577,11 @@ bool SIM68MD::gps_decode(char *start, size_t length)
 							{
 								time(&mStart_time);
 								mWaitTime = mSearchTime;
-// #ifndef CONFIG_SIM68MD_PD_2
-// 								uart_write_bytes(mConfig.port, cmd_auto_saving_enable, strlen(cmd_auto_saving_enable));
-// 								ESP_LOGI(TAG, "send %s", cmd_rtc);
-// #endif
+#ifndef CONFIG_SIM68MD_PD_2
+								uart_write_bytes(mConfig.port, cmd_auto_saving_enable, strlen(cmd_auto_saving_enable));
+								uart_wait_tx_done(mConfig.port,10);
+								// ESP_LOGI(TAG, "send %s", cmd_rtc);
+#endif
 							}
 						}
 #endif
