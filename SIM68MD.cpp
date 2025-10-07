@@ -50,7 +50,7 @@ SIM68MD *SIM68MD::init(SGPSConfig *cfg)
 		theSingleInstance->CBaseTask::init(GPSTASK_NAME, GPSTASK_STACKSIZE, cfg->prior, GPSTASK_LENGTH, cfg->cpu);
 		// Добавление очереди задачи в набор очередей
 		xQueueAddToSet(theSingleInstance->mTaskQueue, theSingleInstance->mQueueSet);
-		vTaskDelay(2);
+		// vTaskDelay(2);
 	}
 	return theSingleInstance;
 }
@@ -98,6 +98,10 @@ SIM68MD::SIM68MD(SGPSConfig *cfg) : CBaseTask()
 		gpio_set_level((gpio_num_t)mConfig.pin_eint_in, 1);
 		gpio_set_level((gpio_num_t)mConfig.pin_eint0, 0);
 	}
+	else if (mConfig.onSleep != nullptr)
+	{
+		mConfig.onSleep(1, 0);
+	}
 
 	// Инициализация структур данных
 	std::memset(&mData, 0, sizeof(SGPSData));
@@ -124,6 +128,10 @@ SIM68MD::~SIM68MD()
 	{
 		gpio_config_t io_conf = {BIT64(mConfig.pin_eint_in) | BIT64(mConfig.pin_eint0), GPIO_MODE_DISABLE, GPIO_PULLUP_DISABLE, GPIO_PULLDOWN_DISABLE, GPIO_INTR_DISABLE};
 		gpio_config(&io_conf);
+	}
+	else if (mConfig.onSleep != nullptr)
+	{
+		mConfig.onSleep(1, 1);
 	}
 }
 
@@ -173,6 +181,12 @@ void SIM68MD::initUart()
 			gpio_set_level((gpio_num_t)mConfig.pin_eint_in, 1);
 			gpio_set_level((gpio_num_t)mConfig.pin_eint0, 0);
 		}
+		else if (mConfig.onSleep != nullptr)
+		{
+			mConfig.onSleep(0, 1);
+			vTaskDelay(pdMS_TO_TICKS(25));
+			mConfig.onSleep(1, 0);
+		}
 #ifdef CONFIG_SIM68MD_PD_1
 		if (firstStart)
 		{
@@ -211,7 +225,7 @@ void SIM68MD::deinitUart(bool rtc)
 			uart_write_bytes(mConfig.port, cmd_rtc, strlen(cmd_rtc));
 			ESP_LOGD(TAG, "send %s", cmd_rtc);
 			mRun = EGPSMode::RTC;
-			if ((mConfig.pin_eint_in >= 0) && (mConfig.pin_eint0 >= 0))
+			if (((mConfig.pin_eint_in >= 0) && (mConfig.pin_eint0 >= 0)) || (mConfig.onSleep != nullptr))
 				ESP_LOGI(TAG, "RTC");
 			else
 				ESP_LOGW(TAG, "RTC without exit");

@@ -2,9 +2,9 @@
 	\file SIM68MD.h
 	\brief Драйвер для управления GPS-модулем SIM68MD через UART-интерфейс.
 	\authors Близнец Р.А. (r.bliznets@gmail.com)
-	\version 1.3.0.0
+	\version 1.4.0.0
 	\date 16 ноября 2023 г.
-	\warning Для работы требуется ESP-IDF с поддержкой FreeRTOS и аппаратного UART
+	\warning Для работы требуется ESP-IDF с поддержкой FreeRTOS и аппаратный UART
 */
 
 #pragma once
@@ -92,11 +92,14 @@ class SIM68MD;
  */
 typedef void onGPSFailed(SIM68MD *device);
 
+typedef void onGPSSleep(bool eint_in, bool eint0);
+
 /// Конфигурация драйвера GPS-модуля
 struct SGPSConfig
 {
 	onGPS *onDataRx = nullptr;		 ///< Хендлер новых данных (вызывается в контексте задачи)
 	onGPSFailed *onFailed = nullptr; ///< Хендлер ошибок связи
+	onGPSSleep *onSleep = nullptr; 
 
 	uint8_t cpu = 1;   ///< Номер ядра процессора (0 или 1)
 	uint8_t prior = 2; ///< Приоритет задачи (0-25, где 25 - наивысший)
