@@ -240,7 +240,6 @@ void SIM68MD::initUart()
 		}
 		// Сброс данных и флагов
 		mEventSend = false;
-		std::memset(&mData, 0, sizeof(SGPSData));
 		ESP_LOGI(TAG, "Run");
 	}
 }
