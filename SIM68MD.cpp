@@ -23,15 +23,16 @@ static const char *cmd_hot_on = "\r\n$PAIR004*3E\r\n";
 static const char *cmd_off = "\r\n$PAIR003*39\r\n";	  // Команда перехода в Standby режим
 static const char *cmd_rtc = "\r\n$PAIR650,0*25\r\n"; // Команда перехода в Backup режим
 static const char *cmd_auto_saving_enable = "$PAIR490,1*2A\r\n$PAIR510,1*23\r\n";
-
-bool SIM68MD::firstStart = true;
 #else
 static const char *cmd_on = "$PAIR002*38\r\n";					   // Команда включения
+static const char *cmd_hot_on = "$PMTK101*32\r\n";
 static const char *cmd_off = "$PMTK161,1*29\r\n";				   // Команда перехода в Standby режим
 static const char *cmd_rtc = "$PMTK161,0*28\r\n";				   // Команда перехода в Backup режим
 static const char *cmd_on1 = "$PMTK225,0*2B\r\n$PMTK225,8*23\r\n"; // Команда перехода в AlwaysLocate Standby режим
 static const char *cmd_on2 = "$PMTK225,0*2B\r\n$PMTK225,9*22\r\n"; // Команда перехода в AlwaysLocate Backup режим
-#endif // DEBUG
+#endif 
+
+bool SIM68MD::firstStart = false;
 
 // Единственный экземпляр класса (Singleton pattern)
 SIM68MD *SIM68MD::theSingleInstance = nullptr;
@@ -231,14 +232,12 @@ void SIM68MD::initUart()
 			uart_wait_tx_done(mConfig.port, 50);
 		}
 		mRun = EGPSMode::Run;
-#ifdef CONFIG_SIM68MD_PD_1
 		if (firstStart)
 		{
 			uart_write_bytes(mConfig.port, cmd_hot_on, strlen(cmd_on));
-			ESP_LOGD(TAG, "send %s", cmd_hot_on);
+			ESP_LOGW(TAG, "send %s", cmd_hot_on);
 			firstStart = false;
 		}
-#endif
 		// Сброс данных и флагов
 		mEventSend = false;
 		std::memset(&mData, 0, sizeof(SGPSData));
@@ -626,7 +625,7 @@ bool SIM68MD::gps_decode(char *start, size_t length)
 #ifndef CONFIG_SIM68MD_PD_2
 								uart_write_bytes(mConfig.port, cmd_auto_saving_enable, strlen(cmd_auto_saving_enable));
 								uart_wait_tx_done(mConfig.port, 10);
-								// ESP_LOGI(TAG, "send %s", cmd_rtc);
+								ESP_LOGI(TAG, "send %s", cmd_auto_saving_enable);
 #endif
 							}
 						}

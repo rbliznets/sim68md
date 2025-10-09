@@ -119,9 +119,7 @@ class SIM68MD : public CBaseTask
 protected:
 	static SIM68MD *theSingleInstance; ///< Единственный экземпляр класса
 
-#ifdef CONFIG_SIM68MD_PD_1
 	static bool firstStart;
-#endif
 
 #if CONFIG_PM_ENABLE
 	esp_pm_lock_handle_t mPMLock; ///< Блокировка снижения частоты CPU для UART
