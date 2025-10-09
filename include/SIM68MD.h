@@ -53,7 +53,7 @@ enum class EGPSMode
 {
 	Unknown = 0, ///< Неинициализированное состояние
 	Run = 1,	 ///< Активный режим с передачей данных
-	Sleep = 2,	 ///< Энергосберегающий режим с пробуждением по прерыванию
+	Sleep = 2,	 ///< Энергосберегающий режим 
 	RTC = 3		 ///< Глубокий сон с питанием только часов реального времени
 };
 
@@ -209,4 +209,6 @@ public:
 	{
 		return sendCmd(MSG_GPS_OFF, rtc_mode, wake_after);
 	}
+
+	inline EGPSMode getState(){return mRun;};
 };
