@@ -2,7 +2,7 @@
 	\file
 	\brief Класс управления SIM68MD через UART.
 	\authors Близнец Р.А. (r.bliznets@gmail.com)
-	\version 1.3.0.0
+	\version 1.5.0.0
 	\date 16.11.2023
 */
 
@@ -14,42 +14,42 @@
 #include <cstring>
 #include <sys/time.h>
 
-// Тег для логирования GPS-событий
+// Tag for GPS event logging
 static const char *TAG = "gps";
-// Команды для управления модулем SIM68MD
+// Commands for controlling the SIM68MD module
 #ifdef CONFIG_SIM68MD_PD_1
-static const char *cmd_on = "\r\n$PAIR002*38\r\n"; // Команда включения
-static const char *cmd_hot_on = "\r\n$PAIR004*3E\r\n";
-static const char *cmd_off = "\r\n$PAIR003*39\r\n";	  // Команда перехода в Standby режим
-static const char *cmd_rtc = "\r\n$PAIR650,0*25\r\n"; // Команда перехода в Backup режим
+static const char *cmd_on = "$PAIR002*38\r\n"; // Power on command
+static const char *cmd_hot_on = "$PAIR004*3E\r\n";
+static const char *cmd_off = "$PAIR003*39\r\n";	  // Command to enter Standby mode
+static const char *cmd_rtc = "$PAIR650,0*25\r\n"; // Command to enter Backup mode
 static const char *cmd_auto_saving_enable = "$PAIR490,1*2A\r\n$PAIR510,1*23\r\n";
 #else
-static const char *cmd_on = "$PAIR002*38\r\n";					   // Команда включения
+static const char *cmd_on = "$PAIR002*38\r\n"; // Power on command
 static const char *cmd_hot_on = "$PMTK101*32\r\n";
-static const char *cmd_off = "$PMTK161,1*29\r\n";				   // Команда перехода в Standby режим
-static const char *cmd_rtc = "$PMTK161,0*28\r\n";				   // Команда перехода в Backup режим
-static const char *cmd_on1 = "$PMTK225,0*2B\r\n$PMTK225,8*23\r\n"; // Команда перехода в AlwaysLocate Standby режим
-static const char *cmd_on2 = "$PMTK225,0*2B\r\n$PMTK225,9*22\r\n"; // Команда перехода в AlwaysLocate Backup режим
-#endif 
+static const char *cmd_off = "$PMTK161,1*29\r\n";				   // Command to enter Standby mode
+static const char *cmd_rtc = "$PMTK161,0*28\r\n";				   // Command to enter Backup mode
+static const char *cmd_on1 = "$PMTK225,0*2B\r\n$PMTK225,8*23\r\n"; // Command to enter AlwaysLocate Standby mode
+static const char *cmd_on2 = "$PMTK225,0*2B\r\n$PMTK225,9*22\r\n"; // Command to enter AlwaysLocate Backup mode
+#endif
 
 bool SIM68MD::firstStart = false;
 
-// Единственный экземпляр класса (Singleton pattern)
+// Singleton pattern - single instance of the class
 SIM68MD *SIM68MD::theSingleInstance = nullptr;
 
 /*!
-	\brief Инициализация единственного экземпляра класса
-	\param cfg Указатель на конфигурацию GPS
-	\return Указатель на созданный экземпляр
+	\brief Initialize single class instance
+	\param cfg Pointer to GPS configuration
+	\return Pointer to created instance
 */
 SIM68MD *SIM68MD::init(SGPSConfig *cfg)
 {
 	if (theSingleInstance == nullptr)
 	{
-		// Создание экземпляра и инициализация базового класса задачи
+		// Create instance and initialize base task class
 		theSingleInstance = new SIM68MD(cfg);
 		theSingleInstance->CBaseTask::init(GPSTASK_NAME, GPSTASK_STACKSIZE, cfg->prior, GPSTASK_LENGTH, cfg->cpu);
-		// Добавление очереди задачи в набор очередей
+		// Add task queue to queue set
 		xQueueAddToSet(theSingleInstance->mTaskQueue, theSingleInstance->mQueueSet);
 		// vTaskDelay(2);
 	}
@@ -57,15 +57,15 @@ SIM68MD *SIM68MD::init(SGPSConfig *cfg)
 }
 
 /*!
-	\brief Освобождение ресурсов и удаление экземпляра
+	\brief Free resources and delete instance
 */
 void SIM68MD::free()
 {
 	if (theSingleInstance != nullptr)
 	{
-		// Отправка команды завершения задачи
+		// Send task completion command
 		theSingleInstance->sendCmd(MSG_END_TASK);
-		// Ожидание завершения задачи
+		// Wait for task completion
 		do
 		{
 			vTaskDelay(1);
@@ -76,22 +76,22 @@ void SIM68MD::free()
 		while (theSingleInstance->mTaskQueue != nullptr);
 #endif
 		vTaskDelay(1);
-		// Удаление экземпляра
+		// Delete instance
 		delete theSingleInstance;
 		theSingleInstance = nullptr;
 	}
 }
 
 /*!
-	\brief Конструктор класса
-	\param cfg Указатель на конфигурацию GPS
+	\brief Class constructor
+	\param cfg Pointer to GPS configuration
 */
 SIM68MD::SIM68MD(SGPSConfig *cfg) : CBaseTask()
 {
-	// Копирование конфигурации
+	// Copy configuration
 	std::memcpy(&mConfig, cfg, sizeof(SGPSConfig));
 
-	// Настройка GPIO-пинов прерываний, если они заданы
+	// Configure GPIO interrupt pins if specified
 	if ((mConfig.pin_eint_in >= 0) && (mConfig.pin_eint0 >= 0))
 	{
 		gpio_config_t io_conf = {BIT64(mConfig.pin_eint_in) | BIT64(mConfig.pin_eint0), GPIO_MODE_OUTPUT, GPIO_PULLUP_ENABLE, GPIO_PULLDOWN_DISABLE, GPIO_INTR_DISABLE};
@@ -104,22 +104,22 @@ SIM68MD::SIM68MD(SGPSConfig *cfg) : CBaseTask()
 		mConfig.onSleep(1, 0);
 	}
 
-	// Инициализация структур данных
+	// Initialize data structures
 	std::memset(&mData, 0, sizeof(SGPSData));
 	mQueueSet = xQueueCreateSet(GPSTASK_LENGTH + GPS_EVEN_BUF);
 
 #if CONFIG_PM_ENABLE
-	// Создание блокировки управления питанием
+	// Create power management lock
 	esp_pm_lock_create(ESP_PM_APB_FREQ_MAX, 0, "gps", &mPMLock);
 #endif
 }
 
 /*!
-	\brief Деструктор класса
+	\brief Class destructor
 */
 SIM68MD::~SIM68MD()
 {
-	// Освобождение ресурсов очередей и GPIO
+	// Free queue and GPIO resources
 	vQueueDelete(mQueueSet);
 #if CONFIG_PM_ENABLE
 	esp_pm_lock_delete(mPMLock);
@@ -137,13 +137,13 @@ SIM68MD::~SIM68MD()
 }
 
 /*!
-	\brief Инициализация UART-интерфейса
+	\brief Initialize UART interface
 */
 void SIM68MD::initUart()
 {
 	if (mRun != EGPSMode::Run)
 	{
-		// Конфигурация параметров UART
+		// Configure UART parameters
 		uart_config_t uart_config = {
 			.baud_rate = mConfig.baudrate,
 			.data_bits = UART_DATA_8_BITS,
@@ -162,26 +162,20 @@ void SIM68MD::initUart()
 #if CONFIG_PM_ENABLE
 		esp_pm_lock_acquire(mPMLock);
 #endif
-		// Установка драйвера UART
+		// Install UART driver
 		ESP_ERROR_CHECK(uart_driver_install(mConfig.port, GPS_RX_BUF, GPS_TX_BUF, GPS_EVEN_BUF, &m_uart_queue, intr_alloc_flags));
 		xQueueAddToSet(m_uart_queue, mQueueSet);
 		ESP_ERROR_CHECK(uart_param_config(mConfig.port, &uart_config));
 		ESP_ERROR_CHECK(uart_set_pin(mConfig.port, mConfig.pin_tx, mConfig.pin_rx, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
 
-		// Настройка детектирования конца строки
+		// Configure end-of-line detection
 		ESP_ERROR_CHECK(uart_enable_pattern_det_baud_intr(mConfig.port, '\n', 1, 5, 0, 0));
 		ESP_ERROR_CHECK(uart_pattern_queue_reset(mConfig.port, GPS_EVEN_BUF));
 		ESP_ERROR_CHECK(uart_flush(mConfig.port));
 
-		// Активация модуля через GPIO
+		// Activate module via GPIO
 		if ((mConfig.pin_eint_in >= 0) && (mConfig.pin_eint0 >= 0))
 		{
-			// gpio_set_level((gpio_num_t)mConfig.pin_eint_in, 0);
-			// gpio_set_level((gpio_num_t)mConfig.pin_eint0, 1);
-			// vTaskDelay(pdMS_TO_TICKS(25));
-			// gpio_set_level((gpio_num_t)mConfig.pin_eint_in, 1);
-			// gpio_set_level((gpio_num_t)mConfig.pin_eint0, 0);
-			// vTaskDelay(pdMS_TO_TICKS(2));
 			if ((mRun == EGPSMode::RTC) || (mRun == EGPSMode::Unknown))
 			{
 				gpio_set_level((gpio_num_t)mConfig.pin_eint0, 1);
@@ -193,10 +187,18 @@ void SIM68MD::initUart()
 				gpio_set_level((gpio_num_t)mConfig.pin_eint_in, 0);
 				vTaskDelay(pdMS_TO_TICKS(15));
 				gpio_set_level((gpio_num_t)mConfig.pin_eint_in, 1);
+#ifdef CONFIG_SIM68MD_PD_1
+				if (mRun == EGPSMode::Sleep)
+				{
+					uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
+					ESP_LOGD(TAG, "send %s", cmd_on);
+					uart_wait_tx_done(mConfig.port, 50);
+				}
+#endif
 			}
 			if ((mRun == EGPSMode::RTC) || (mRun == EGPSMode::Unknown))
 			{
-				// Отправка команды включения
+				// Send power on command
 				uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
 				ESP_LOGD(TAG, "send %s", cmd_on);
 				uart_wait_tx_done(mConfig.port, 50);
@@ -218,7 +220,7 @@ void SIM68MD::initUart()
 			}
 			if ((mRun == EGPSMode::RTC) || (mRun == EGPSMode::Unknown))
 			{
-				// Отправка команды включения
+				// Send power on command
 				uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
 				ESP_LOGD(TAG, "send %s", cmd_on);
 				uart_wait_tx_done(mConfig.port, 50);
@@ -226,7 +228,7 @@ void SIM68MD::initUart()
 		}
 		else
 		{
-			// Отправка команды включения
+			// Send power on command
 			uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
 			ESP_LOGD(TAG, "send %s", cmd_on);
 			uart_wait_tx_done(mConfig.port, 50);
@@ -238,26 +240,26 @@ void SIM68MD::initUart()
 			ESP_LOGW(TAG, "send %s", cmd_hot_on);
 			firstStart = false;
 		}
-		// Сброс данных и флагов
+		// Reset data and flags
 		mEventSend = false;
 		ESP_LOGI(TAG, "Run");
 	}
 }
 
 /*!
-	\brief Деинициализация UART
-	\param rtc Флаг перехода в RTC-режим
+	\brief Deinitialize UART
+	\param rtc Flag for RTC mode transition
 */
 void SIM68MD::deinitUart(bool rtc)
 {
 	if (mRun == EGPSMode::Run)
 	{
 		xQueueRemoveFromSet(m_uart_queue, mQueueSet);
-		// Ожидание завершения передачи
+		// Wait for transmission completion
 		ESP_ERROR_CHECK(uart_wait_tx_done(mConfig.port, pdMS_TO_TICKS(250)));
 		if (rtc)
 		{
-			// Отправка команды RTC
+			// Send RTC command
 			uart_write_bytes(mConfig.port, cmd_rtc, strlen(cmd_rtc));
 			ESP_LOGD(TAG, "send %s", cmd_rtc);
 			mRun = EGPSMode::RTC;
@@ -268,18 +270,18 @@ void SIM68MD::deinitUart(bool rtc)
 		}
 		else
 		{
-			// Отправка команды выключения
+			// Send power off command
 			uart_write_bytes(mConfig.port, cmd_off, strlen(cmd_off));
 			ESP_LOGD(TAG, "send %s", cmd_off);
 			mRun = EGPSMode::Sleep;
 			ESP_LOGI(TAG, "Sleep");
 		}
-		// Завершение работы UART
+		// Complete UART operation
 		ESP_ERROR_CHECK(uart_wait_tx_done(mConfig.port, pdMS_TO_TICKS(150)));
 		ESP_ERROR_CHECK(uart_driver_delete(mConfig.port));
 		m_uart_queue = nullptr;
 		esp_gpio_revoke(BIT64(mConfig.pin_tx) | BIT64(mConfig.pin_rx));
-		vTaskDelay(pdMS_TO_TICKS(10));
+		vTaskDelay(pdMS_TO_TICKS(1));
 #if CONFIG_PM_ENABLE
 		esp_pm_lock_release(mPMLock);
 #endif
@@ -287,7 +289,7 @@ void SIM68MD::deinitUart(bool rtc)
 }
 
 /*!
-	\brief Основной цикл обработки задач
+	\brief Main task processing loop
 */
 void SIM68MD::run()
 {
@@ -302,7 +304,7 @@ void SIM68MD::run()
 
 	for (;;)
 	{
-		// Обработка таймаутов поиска
+		// Handle search timeouts
 		if (mWaitTime != 0)
 		{
 			time_t now;
@@ -312,7 +314,7 @@ void SIM68MD::run()
 				mWaitTime = 0;
 				if (mRun == EGPSMode::Run)
 				{
-					// Переход в RTC-режим по истечении времени
+					// Enter RTC mode when time expires
 					if (((mConfig.pin_eint_in >= 0) && (mConfig.pin_eint0 >= 0)) || (mConfig.onSleep != nullptr))
 						if (mData.valid > 0)
 							deinitUart(false);
@@ -325,7 +327,7 @@ void SIM68MD::run()
 				}
 				else
 				{
-					// Повторная активация поиска
+					// Reactivate search
 					initUart();
 					if (mSearchTime > 0)
 					{
@@ -335,10 +337,10 @@ void SIM68MD::run()
 				}
 			}
 		}
-		// Обработка событий из очередей
+		// Process events from queues
 		if ((xActivatedMember = xQueueSelectFromSet(mQueueSet, TASK_MAX_BLOCK_TIME)) != nullptr)
 		{
-			// Обработка событий UART
+			// Process UART events
 			if ((mRun == EGPSMode::Run) && (xActivatedMember == m_uart_queue))
 			{
 				uart_event_t event;
@@ -369,7 +371,7 @@ void SIM68MD::run()
 						ESP_LOGE(TAG, "Frame Error");
 						break;
 					case UART_PATTERN_DET:
-						// Обработка паттерна конца строки
+						// Process end-of-line pattern
 						pos = uart_pattern_pop_pos(mConfig.port);
 						while (pos != -1)
 						{
@@ -382,7 +384,7 @@ void SIM68MD::run()
 									if (mBuf[1] != 'P')
 									{
 										ESP_LOGD(TAG, "%s", mBuf);
-										// Декодирование NMEA-сообщения
+										// Decode NMEA message
 										if (gps_decode(mBuf, read_len))
 										{
 											mCount++;
@@ -414,7 +416,7 @@ void SIM68MD::run()
 					}
 				}
 			}
-			// Обработка сообщений задачи
+			// Process task messages
 			else if (xActivatedMember == mTaskQueue)
 			{
 				while (getMessage(&msg))
@@ -422,8 +424,7 @@ void SIM68MD::run()
 					switch (msg.msgID)
 					{
 					case MSG_GPS_ON:
-						// ESP_LOGE(TAG, "MSG_GPS_ON %d, %ld", msg.shortParam, msg.paramID);
-						// Активация GPS с заданным временем поиска
+						// Activate GPS with specified search time
 						initUart();
 						mSearchTime = msg.paramID;
 						if (mSearchTime > 0)
@@ -450,8 +451,7 @@ void SIM68MD::run()
 						}
 						break;
 					case MSG_GPS_OFF:
-						// Деактивация GPS
-						// ESP_LOGW(TAG, "MSG_GPS_OFF %d, %ld", msg.shortParam, msg.paramID);
+						// Deactivate GPS
 						deinitUart(msg.shortParam != 0);
 						if (msg.paramID > 0)
 						{
@@ -469,7 +469,7 @@ void SIM68MD::run()
 			}
 		}
 #ifndef CONFIG_FREERTOS_CHECK_STACKOVERFLOW_NONE
-		// Контроль переполнения стека
+		// Stack overflow control
 		UBaseType_t m2 = uxTaskGetStackHighWaterMark2(nullptr);
 		if (m2 != m1)
 		{
@@ -477,7 +477,7 @@ void SIM68MD::run()
 			TDEC("free gps stack", m2);
 		}
 #endif
-		// Проверка активности GPS
+		// Check GPS activity
 		if (mRun == EGPSMode::Run)
 		{
 			time_t now;
@@ -494,7 +494,7 @@ void SIM68MD::run()
 					count_time = now;
 					if (mCount == 0)
 					{
-						// Вызов обработчика при отсутствии данных
+						// Call handler when no data
 						if (mConfig.onFailed != nullptr)
 							mConfig.onFailed(this);
 					}
@@ -509,16 +509,16 @@ void SIM68MD::run()
 		}
 	}
 endTask:
-	// Завершение работы
+	// Complete operation
 	deinitUart(true);
 	xQueueRemoveFromSet(mTaskQueue, mQueueSet);
 }
 
 /*!
-	\brief Декодирование NMEA-сообщений
-	\param start Указатель на буфер с данными
-	\param length Длина данных
-	\return true - сообщение обработано успешно
+	\brief Decode NMEA messages
+	\param start Pointer to data buffer
+	\param length Data length
+	\return true - message processed successfully
 */
 bool SIM68MD::gps_decode(char *start, size_t length)
 {
@@ -536,24 +536,31 @@ bool SIM68MD::gps_decode(char *start, size_t length)
 		}
 		else
 		{
-			// Обработка различных типов NMEA-сообщений
+			// Process different NMEA message types
 			if (NMEA_GPGGA == data->type)
 			{
-				// ESP_LOGI(TAG, "%s", str.c_str());
-				// Обработка данных о местоположении
+				// Process location data
 				nmea_gpgga_s *gpgga = (nmea_gpgga_s *)data;
+				if (gpgga->position_fix == 0)
+				{
+					if (mDelayNonValid != 0)
+					{
+						mDelayNonValid--;
+						return true;
+					}
+				}
+				else
+				{
+					mDelayNonValid = GPS_INAVALID_DELAY;
+				}
 				std::memcpy(&mTime, &gpgga->time, sizeof(tm));
 				if (mData.valid != gpgga->position_fix)
 				{
 					mData.valid = gpgga->position_fix;
 					mEventSend = true;
 					mFixChanged = true;
-					// TDEC("mData.valid",mData.valid);
-					// LOG(str.c_str());
-					// if (mData.valid > 0)
-					// 	mWaitTime = 0;
 				}
-				// Обновление информации о спутниках и высоте
+				// Update satellite and altitude information
 				if (mData.satellites != gpgga->n_satellites)
 				{
 					mData.satellites = gpgga->n_satellites;
@@ -562,7 +569,7 @@ bool SIM68MD::gps_decode(char *start, size_t length)
 				{
 					mData.altitude = gpgga->altitude;
 				}
-				// Обновление координат
+				// Update coordinates
 				if (mData.longitude.degrees != gpgga->longitude.degrees)
 				{
 					mData.longitude.degrees = gpgga->longitude.degrees;
@@ -596,13 +603,13 @@ bool SIM68MD::gps_decode(char *start, size_t length)
 			}
 			else if (NMEA_GPGSA == data->type)
 			{
-				// Обработка данных о точности
+				// Process accuracy data
 				nmea_gpgsa_s *gpgsa = (nmea_gpgsa_s *)data;
 				mData.hdop = gpgsa->hdop;
 			}
 			else if (NMEA_GPRMC == data->type)
 			{
-				// Обработка временных данных
+				// Process time data
 				nmea_gprmc_s *pos = (nmea_gprmc_s *)data;
 				mTime.tm_mday = pos->date_time.tm_mday;
 				mTime.tm_mon = pos->date_time.tm_mon;
@@ -614,7 +621,7 @@ bool SIM68MD::gps_decode(char *start, size_t length)
 					{
 						mFixChanged = false;
 #if (CONFIG_SIM68MD_SYNC_TIME == 1)
-						// Синхронизация системного времени
+						// Synchronize system time
 						if (mData.valid != 0)
 						{
 							if (CDateTimeSystem::setDateTime(mData.time))
@@ -630,7 +637,7 @@ bool SIM68MD::gps_decode(char *start, size_t length)
 						}
 #endif
 					}
-					// Вызов пользовательского обработчика данных
+					// Call user data handler
 					if (mEventSend)
 					{
 						mEventSend = false;
