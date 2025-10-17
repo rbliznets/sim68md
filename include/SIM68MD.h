@@ -28,19 +28,7 @@
 #define GPS_EVEN_BUF 10				   ///< UART event queue depth
 #define GPS_INAVALID_DELAY 3		   ///< Wait in sec for valid data from GPS	   
 
-// Task timeout setting for Watchdog Timer compatibility
-#ifdef CONFIG_ESP_TASK_WDT
-#if CONFIG_ESP_TASK_WDT_TIMEOUT_S > 1
-#define TASK_MAX_BLOCK_TIME pdMS_TO_TICKS(1000)
-#else
-#define TASK_MAX_BLOCK_TIME pdMS_TO_TICKS((CONFIG_ESP_TASK_WDT_TIMEOUT_S - 1) * 1000 + 500)
-#endif
-#else
-#define TASK_MAX_BLOCK_TIME portMAX_DELAY ///< Maximum task block time
-#endif
-
 // GPS task control commands
-#define MSG_END_TASK 0 ///< Force task termination
 #define MSG_GPS_ON 10  ///< Activate GPS with search parameters
 #define MSG_GPS_OFF 11 ///< Deactivate GPS with mode selection
 

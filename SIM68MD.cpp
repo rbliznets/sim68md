@@ -14,6 +14,17 @@
 #include <cstring>
 #include <sys/time.h>
 
+// Task timeout setting for Watchdog Timer compatibility
+#ifdef CONFIG_ESP_TASK_WDT
+#if CONFIG_ESP_TASK_WDT_TIMEOUT_S > 1
+#define TASK_MAX_BLOCK_TIME pdMS_TO_TICKS(1000)
+#else
+#define TASK_MAX_BLOCK_TIME pdMS_TO_TICKS((CONFIG_ESP_TASK_WDT_TIMEOUT_S - 1) * 1000 + 500)
+#endif
+#else
+#define TASK_MAX_BLOCK_TIME portMAX_DELAY ///< Maximum task block time
+#endif
+
 // Tag for GPS event logging
 static const char *TAG = "gps";
 // Commands for controlling the SIM68MD module
