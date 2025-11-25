@@ -35,7 +35,7 @@ static const char *cmd_off = "$PAIR003*39\r\n";	  // Command to enter Standby mo
 static const char *cmd_rtc = "$PAIR650,0*25\r\n"; // Command to enter Backup mode
 static const char *cmd_auto_saving_enable = "$PAIR490,1*2A\r\n$PAIR510,1*23\r\n";
 #else
-static const char *cmd_on = "$PAIR002*38\r\n"; // Power on command
+static const char *cmd_on = "$PMTK101*32\r\n"; // Power on command
 static const char *cmd_hot_on = "$PMTK101*32\r\n";
 static const char *cmd_off = "$PMTK161,1*29\r\n";				   // Command to enter Standby mode
 static const char *cmd_rtc = "$PMTK161,0*28\r\n";				   // Command to enter Backup mode
