@@ -403,7 +403,7 @@ void SIM68MD::run()
 									}
 									else
 									{
-										ESP_LOGI(TAG, "%s", mBuf);
+										ESP_LOGD(TAG, "%s", mBuf);
 									}
 								}
 								else

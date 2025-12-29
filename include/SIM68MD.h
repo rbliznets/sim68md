@@ -34,7 +34,7 @@
 
 // GPS processing task parameters
 #define GPSTASK_NAME "gps"				   ///< Task identifier for debugging
-#define GPSTASK_STACKSIZE (2 * 1024 + 512) ///< Task stack size (bytes)
+#define GPSTASK_STACKSIZE (3 * 1024) 		///< Task stack size (bytes)
 #define GPSTASK_LENGTH 10				   ///< Message queue capacity
 
 /**
