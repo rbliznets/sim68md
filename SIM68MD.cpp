@@ -660,6 +660,6 @@ bool SIM68MD::gps_decode(char *start, size_t length)
 			}
 		}
 		nmea_free(data);
+		return true;
 	}
-	return true;
 }
