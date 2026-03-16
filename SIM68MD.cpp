@@ -557,6 +557,7 @@ bool SIM68MD::gps_decode(char *start, size_t length)
 					if (mDelayNonValid != 0)
 					{
 						mDelayNonValid--;
+						nmea_free(data);
 						return true;
 					}
 				}
