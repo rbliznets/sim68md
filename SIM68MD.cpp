@@ -2,7 +2,7 @@
 	\file
 	\brief Класс управления SIM68MD через UART.
 	\authors Близнец Р.А. (r.bliznets@gmail.com)
-	\version 1.5.0.0
+	\version 1.5.1.0
 	\date 16.11.2023
 */
 
@@ -173,8 +173,11 @@ void SIM68MD::initUart()
 #if CONFIG_PM_ENABLE
 		esp_pm_lock_acquire(mPMLock);
 #endif
+		int tx_buffer_size = GPS_TX_BUF;
+		if (mConfig.pin_tx == -1)
+			tx_buffer_size = 16;
 		// Install UART driver
-		ESP_ERROR_CHECK(uart_driver_install(mConfig.port, GPS_RX_BUF, GPS_TX_BUF, GPS_EVEN_BUF, &m_uart_queue, intr_alloc_flags));
+		ESP_ERROR_CHECK(uart_driver_install(mConfig.port, GPS_RX_BUF, tx_buffer_size, GPS_EVEN_BUF, &m_uart_queue, intr_alloc_flags));
 		xQueueAddToSet(m_uart_queue, mQueueSet);
 		ESP_ERROR_CHECK(uart_param_config(mConfig.port, &uart_config));
 		ESP_ERROR_CHECK(uart_set_pin(mConfig.port, mConfig.pin_tx, mConfig.pin_rx, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
@@ -199,7 +202,7 @@ void SIM68MD::initUart()
 				vTaskDelay(pdMS_TO_TICKS(15));
 				gpio_set_level((gpio_num_t)mConfig.pin_eint_in, 1);
 #ifdef CONFIG_SIM68MD_PD_1
-				if (mRun == EGPSMode::Sleep)
+				if ((mRun == EGPSMode::Sleep) && (mConfig.pin_tx != -1))
 				{
 					uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
 					ESP_LOGD(TAG, "send %s", cmd_on);
@@ -209,10 +212,13 @@ void SIM68MD::initUart()
 			}
 			if ((mRun == EGPSMode::RTC) || (mRun == EGPSMode::Unknown))
 			{
-				// Send power on command
-				uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
-				ESP_LOGD(TAG, "send %s", cmd_on);
-				uart_wait_tx_done(mConfig.port, 50);
+				if (mConfig.pin_tx != -1)
+				{
+					// Send power on command
+					uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
+					ESP_LOGD(TAG, "send %s", cmd_on);
+					uart_wait_tx_done(mConfig.port, 50);
+				}
 			}
 		}
 		else if (mConfig.onSleep != nullptr)
@@ -231,24 +237,33 @@ void SIM68MD::initUart()
 			}
 			if ((mRun == EGPSMode::RTC) || (mRun == EGPSMode::Unknown))
 			{
+				if (mConfig.pin_tx != -1)
+				{
+					// Send power on command
+					uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
+					ESP_LOGD(TAG, "send %s", cmd_on);
+					uart_wait_tx_done(mConfig.port, 50);
+				}
+			}
+		}
+		else
+		{
+			if (mConfig.pin_tx != -1)
+			{
 				// Send power on command
 				uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
 				ESP_LOGD(TAG, "send %s", cmd_on);
 				uart_wait_tx_done(mConfig.port, 50);
 			}
 		}
-		else
-		{
-			// Send power on command
-			uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
-			ESP_LOGD(TAG, "send %s", cmd_on);
-			uart_wait_tx_done(mConfig.port, 50);
-		}
 		mRun = EGPSMode::Run;
 		if (firstStart)
 		{
-			uart_write_bytes(mConfig.port, cmd_hot_on, strlen(cmd_on));
-			ESP_LOGW(TAG, "send %s", cmd_hot_on);
+			if (mConfig.pin_tx != -1)
+			{
+				uart_write_bytes(mConfig.port, cmd_hot_on, strlen(cmd_on));
+				ESP_LOGW(TAG, "send %s", cmd_hot_on);
+			}
 			firstStart = false;
 		}
 		// Reset data and flags
@@ -271,8 +286,11 @@ void SIM68MD::deinitUart(bool rtc)
 		if (rtc)
 		{
 			// Send RTC command
-			uart_write_bytes(mConfig.port, cmd_rtc, strlen(cmd_rtc));
-			ESP_LOGD(TAG, "send %s", cmd_rtc);
+			if (mConfig.pin_tx != -1)
+			{
+				uart_write_bytes(mConfig.port, cmd_rtc, strlen(cmd_rtc));
+				ESP_LOGD(TAG, "send %s", cmd_rtc);
+			}
 			mRun = EGPSMode::RTC;
 			if (((mConfig.pin_eint_in >= 0) && (mConfig.pin_eint0 >= 0)) || (mConfig.onSleep != nullptr))
 				ESP_LOGI(TAG, "RTC");
@@ -281,17 +299,30 @@ void SIM68MD::deinitUart(bool rtc)
 		}
 		else
 		{
-			// Send power off command
-			uart_write_bytes(mConfig.port, cmd_off, strlen(cmd_off));
-			ESP_LOGD(TAG, "send %s", cmd_off);
+			if (mConfig.pin_tx != -1)
+			{
+				// Send power off command
+				uart_write_bytes(mConfig.port, cmd_off, strlen(cmd_off));
+				ESP_LOGD(TAG, "send %s", cmd_off);
+			}
 			mRun = EGPSMode::Sleep;
 			ESP_LOGI(TAG, "Sleep");
 		}
 		// Complete UART operation
-		ESP_ERROR_CHECK(uart_wait_tx_done(mConfig.port, pdMS_TO_TICKS(150)));
+		if (mConfig.pin_tx != -1)
+		{
+			ESP_ERROR_CHECK(uart_wait_tx_done(mConfig.port, pdMS_TO_TICKS(150)));
+		}
 		ESP_ERROR_CHECK(uart_driver_delete(mConfig.port));
 		m_uart_queue = nullptr;
-		esp_gpio_revoke(BIT64(mConfig.pin_tx) | BIT64(mConfig.pin_rx));
+		if (mConfig.pin_tx != -1)
+		{
+			esp_gpio_revoke(BIT64(mConfig.pin_tx) | BIT64(mConfig.pin_rx));
+		}
+		else
+		{
+			esp_gpio_revoke(BIT64(mConfig.pin_rx));
+		}
 		vTaskDelay(pdMS_TO_TICKS(1));
 #if CONFIG_PM_ENABLE
 		esp_pm_lock_release(mPMLock);
@@ -447,17 +478,20 @@ void SIM68MD::run()
 						{
 							mWaitTime = 0;
 #ifdef CONFIG_SIM68MD_PD_2
-							if (mConfig.pin_eint0 >= 0)
+							if (mConfig.pin_tx != -1)
 							{
-								uart_write_bytes(mConfig.port, cmd_on2, strlen(cmd_on2));
-								ESP_LOGD(TAG, "send %s", cmd_on2);
+								if (mConfig.pin_eint0 >= 0)
+								{
+									uart_write_bytes(mConfig.port, cmd_on2, strlen(cmd_on2));
+									ESP_LOGD(TAG, "send %s", cmd_on2);
+								}
+								else
+								{
+									uart_write_bytes(mConfig.port, cmd_on1, strlen(cmd_on1));
+									ESP_LOGD(TAG, "send %s", cmd_on1);
+								}
+								uart_wait_tx_done(mConfig.port, 10);
 							}
-							else
-							{
-								uart_write_bytes(mConfig.port, cmd_on1, strlen(cmd_on1));
-								ESP_LOGD(TAG, "send %s", cmd_on1);
-							}
-							uart_wait_tx_done(mConfig.port, 10);
 #endif
 						}
 						break;
@@ -641,9 +675,12 @@ bool SIM68MD::gps_decode(char *start, size_t length)
 								time(&mStart_time);
 								mWaitTime = mSearchTime;
 #ifndef CONFIG_SIM68MD_PD_2
-								uart_write_bytes(mConfig.port, cmd_auto_saving_enable, strlen(cmd_auto_saving_enable));
-								uart_wait_tx_done(mConfig.port, 10);
-								ESP_LOGI(TAG, "send %s", cmd_auto_saving_enable);
+								if (mConfig.pin_tx != -1)
+								{
+									uart_write_bytes(mConfig.port, cmd_auto_saving_enable, strlen(cmd_auto_saving_enable));
+									uart_wait_tx_done(mConfig.port, 10);
+									ESP_LOGI(TAG, "send %s", cmd_auto_saving_enable);
+								}
 #endif
 							}
 						}

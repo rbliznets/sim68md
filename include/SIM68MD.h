@@ -2,7 +2,7 @@
 	\file SIM68MD.h
 	\brief Driver for controlling SIM68MD GPS module via UART interface.
 	\authors Bliznets R.A. (r.bliznets@gmail.com)
-	\version 1.5.0.0
+	\version 1.5.1.0
 	\date November 16, 2023
 	\warning Requires ESP-IDF with FreeRTOS support and hardware UART
 */
