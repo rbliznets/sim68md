@@ -173,11 +173,8 @@ void SIM68MD::initUart()
 #if CONFIG_PM_ENABLE
 		esp_pm_lock_acquire(mPMLock);
 #endif
-		int tx_buffer_size = GPS_TX_BUF;
-		if (mConfig.pin_tx == -1)
-			tx_buffer_size = 16;
 		// Install UART driver
-		ESP_ERROR_CHECK(uart_driver_install(mConfig.port, GPS_RX_BUF, tx_buffer_size, GPS_EVEN_BUF, &m_uart_queue, intr_alloc_flags));
+		ESP_ERROR_CHECK(uart_driver_install(mConfig.port, GPS_RX_BUF, GPS_TX_BUF, GPS_EVEN_BUF, &m_uart_queue, intr_alloc_flags));
 		xQueueAddToSet(m_uart_queue, mQueueSet);
 		ESP_ERROR_CHECK(uart_param_config(mConfig.port, &uart_config));
 		ESP_ERROR_CHECK(uart_set_pin(mConfig.port, mConfig.pin_tx, mConfig.pin_rx, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
