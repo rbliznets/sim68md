@@ -81,11 +81,7 @@ void SIM68MD::free()
 		{
 			vTaskDelay(1);
 		}
-#if (INCLUDE_vTaskDelete == 1)
-		while (theSingleInstance->mTaskHandle != nullptr);
-#else
 		while (theSingleInstance->mTaskQueue != nullptr);
-#endif
 		vTaskDelay(1);
 		// Delete instance
 		delete theSingleInstance;
