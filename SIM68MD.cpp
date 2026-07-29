@@ -27,23 +27,43 @@
 
 // Tag for GPS event logging
 static const char *TAG = "gps";
-// Commands for controlling the SIM68MD module
-#ifdef CONFIG_SIM68MD_PD_1
-static const char *cmd_on = "$PAIR002*38\r\n"; // Power on command
-static const char *cmd_hot_on = "$PAIR004*3E\r\n";
-static const char *cmd_off = "$PAIR003*39\r\n";	  // Command to enter Standby mode
-static const char *cmd_rtc = "$PAIR650,0*25\r\n"; // Command to enter Backup mode
+// Commands for controlling the SIM68MD module - both protocol variants
+// (the actual variant is auto-detected at runtime, see SIM68MD::detectVersion)
+static const char *cmd_on_pair = "$PAIR002*38\r\n"; // Power on command
+static const char *cmd_hot_on_pair = "$PAIR004*3E\r\n";
+static const char *cmd_off_pair = "$PAIR003*39\r\n";	  // Command to enter Standby mode
+static const char *cmd_rtc_pair = "$PAIR650,0*25\r\n"; // Command to enter Backup mode
 static const char *cmd_auto_saving_enable = "$PAIR490,1*2A\r\n$PAIR510,1*23\r\n";
-#else
-static const char *cmd_on = "$PMTK101*32\r\n"; // Power on command
-static const char *cmd_hot_on = "$PMTK101*32\r\n";
-static const char *cmd_off = "$PMTK161,1*29\r\n";				   // Command to enter Standby mode
-static const char *cmd_rtc = "$PMTK161,0*28\r\n";				   // Command to enter Backup mode
+
+static const char *cmd_on_mtk = "$PMTK101*32\r\n"; // Power on command
+static const char *cmd_hot_on_mtk = "$PMTK101*32\r\n";
+static const char *cmd_off_mtk = "$PMTK161,1*29\r\n";				   // Command to enter Standby mode
+static const char *cmd_rtc_mtk = "$PMTK161,0*28\r\n";				   // Command to enter Backup mode
 static const char *cmd_on1 = "$PMTK225,0*2B\r\n$PMTK225,8*23\r\n"; // Command to enter AlwaysLocate Standby mode
 static const char *cmd_on2 = "$PMTK225,0*2B\r\n$PMTK225,9*22\r\n"; // Command to enter AlwaysLocate Backup mode
+
+// Active command set, selected once the protocol is known (Kconfig default until then)
+#ifdef CONFIG_SIM68MD_PD_1
+static const char *cmd_on = cmd_on_pair;
+static const char *cmd_hot_on = cmd_hot_on_pair;
+static const char *cmd_off = cmd_off_pair;
+static const char *cmd_rtc = cmd_rtc_pair;
+#else
+static const char *cmd_on = cmd_on_mtk;
+static const char *cmd_hot_on = cmd_hot_on_mtk;
+static const char *cmd_off = cmd_off_mtk;
+static const char *cmd_rtc = cmd_rtc_mtk;
 #endif
 
+// Acknowledgement prefixes used to identify the module's protocol
+static const char *ack_pair = "$PAIR001";
+static const char *ack_mtk = "$PMTK001";
+
+#define GPS_PD_DETECT_ATTEMPTS 10		 ///< Number of UART event waits while probing the protocol
+#define GPS_PD_DETECT_TIMEOUT_MS 200 ///< Timeout per attempt (ms)
+
 bool SIM68MD::firstStart = false;
+EGPSPDVersion SIM68MD::mPDVersion = EGPSPDVersion::Unknown;
 
 // Singleton pattern - single instance of the class
 SIM68MD *SIM68MD::theSingleInstance = nullptr;
@@ -144,6 +164,93 @@ SIM68MD::~SIM68MD()
 }
 
 /*!
+	\brief Apply mPDVersion to the active command strings
+*/
+void SIM68MD::selectVersion()
+{
+	if (mPDVersion == EGPSPDVersion::PD1)
+	{
+		cmd_on = cmd_on_pair;
+		cmd_hot_on = cmd_hot_on_pair;
+		cmd_off = cmd_off_pair;
+		cmd_rtc = cmd_rtc_pair;
+		ESP_LOGI(TAG, "GPS protocol: PAIR (PD1)");
+	}
+	else
+	{
+		cmd_on = cmd_on_mtk;
+		cmd_hot_on = cmd_hot_on_mtk;
+		cmd_off = cmd_off_mtk;
+		cmd_rtc = cmd_rtc_mtk;
+		ESP_LOGI(TAG, "GPS protocol: PMTK (PD2)");
+	}
+}
+
+/*!
+	\brief Auto-detect the module's power-down command protocol
+	Probes the module with both $PAIR and $PMTK "power on" commands and
+	identifies the protocol from whichever acknowledgement comes back.
+	Falls back to the Kconfig default if the module stays silent.
+*/
+void SIM68MD::detectVersion()
+{
+	uart_flush_input(mConfig.port);
+	uart_write_bytes(mConfig.port, cmd_on_pair, strlen(cmd_on_pair));
+	uart_write_bytes(mConfig.port, cmd_on_mtk, strlen(cmd_on_mtk));
+	uart_wait_tx_done(mConfig.port, pdMS_TO_TICKS(50));
+
+	uart_event_t event;
+	for (int i = 0; (i < GPS_PD_DETECT_ATTEMPTS) && (mPDVersion == EGPSPDVersion::Unknown); i++)
+	{
+		if (xQueueReceive(m_uart_queue, &event, pdMS_TO_TICKS(GPS_PD_DETECT_TIMEOUT_MS)) != pdTRUE)
+		{
+			break; // module stayed silent
+		}
+		if (event.type != UART_PATTERN_DET)
+		{
+			continue;
+		}
+		int pos = uart_pattern_pop_pos(mConfig.port);
+		while (pos != -1)
+		{
+			if (pos < (GPS_NMEA_BUF - 2))
+			{
+				int read_len = uart_read_bytes(mConfig.port, mBuf, pos + 1, 0);
+				if (read_len > 0)
+				{
+					mBuf[read_len] = '\0';
+					ESP_LOGD(TAG, "detect: %s", mBuf);
+					if (strncmp(mBuf, ack_pair, strlen(ack_pair)) == 0)
+					{
+						mPDVersion = EGPSPDVersion::PD1;
+					}
+					else if (strncmp(mBuf, ack_mtk, strlen(ack_mtk)) == 0)
+					{
+						mPDVersion = EGPSPDVersion::PD2;
+					}
+				}
+			}
+			else
+			{
+				uart_flush_input(mConfig.port);
+			}
+			pos = uart_pattern_pop_pos(mConfig.port);
+		}
+	}
+
+	if (mPDVersion == EGPSPDVersion::Unknown)
+	{
+#ifdef CONFIG_SIM68MD_PD_1
+		mPDVersion = EGPSPDVersion::PD1;
+#else
+		mPDVersion = EGPSPDVersion::PD2;
+#endif
+		ESP_LOGW(TAG, "GPS protocol autodetect got no answer, using Kconfig default");
+	}
+	selectVersion();
+}
+
+/*!
 	\brief Initialize UART interface
 */
 void SIM68MD::initUart()
@@ -194,23 +301,28 @@ void SIM68MD::initUart()
 				gpio_set_level((gpio_num_t)mConfig.pin_eint_in, 0);
 				vTaskDelay(pdMS_TO_TICKS(15));
 				gpio_set_level((gpio_num_t)mConfig.pin_eint_in, 1);
-#ifdef CONFIG_SIM68MD_PD_1
-				if ((mRun == EGPSMode::Sleep) && (mConfig.pin_tx != -1))
+				if ((mRun == EGPSMode::Sleep) && (mConfig.pin_tx != -1) && (mPDVersion == EGPSPDVersion::PD1))
 				{
 					uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
 					ESP_LOGD(TAG, "send %s", cmd_on);
 					uart_wait_tx_done(mConfig.port, 50);
 				}
-#endif
 			}
 			if ((mRun == EGPSMode::RTC) || (mRun == EGPSMode::Unknown))
 			{
 				if (mConfig.pin_tx != -1)
 				{
-					// Send power on command
-					uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
-					ESP_LOGD(TAG, "send %s", cmd_on);
-					uart_wait_tx_done(mConfig.port, 50);
+					if (mRun == EGPSMode::Unknown)
+					{
+						detectVersion();
+					}
+					else
+					{
+						// Send power on command
+						uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
+						ESP_LOGD(TAG, "send %s", cmd_on);
+						uart_wait_tx_done(mConfig.port, 50);
+					}
 				}
 			}
 		}
@@ -232,10 +344,17 @@ void SIM68MD::initUart()
 			{
 				if (mConfig.pin_tx != -1)
 				{
-					// Send power on command
-					uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
-					ESP_LOGD(TAG, "send %s", cmd_on);
-					uart_wait_tx_done(mConfig.port, 50);
+					if (mRun == EGPSMode::Unknown)
+					{
+						detectVersion();
+					}
+					else
+					{
+						// Send power on command
+						uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
+						ESP_LOGD(TAG, "send %s", cmd_on);
+						uart_wait_tx_done(mConfig.port, 50);
+					}
 				}
 			}
 		}
@@ -243,10 +362,17 @@ void SIM68MD::initUart()
 		{
 			if (mConfig.pin_tx != -1)
 			{
-				// Send power on command
-				uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
-				ESP_LOGD(TAG, "send %s", cmd_on);
-				uart_wait_tx_done(mConfig.port, 50);
+				if (mRun == EGPSMode::Unknown)
+				{
+					detectVersion();
+				}
+				else
+				{
+					// Send power on command
+					uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
+					ESP_LOGD(TAG, "send %s", cmd_on);
+					uart_wait_tx_done(mConfig.port, 50);
+				}
 			}
 		}
 		mRun = EGPSMode::Run;
@@ -470,8 +596,7 @@ void SIM68MD::run()
 						else
 						{
 							mWaitTime = 0;
-#ifdef CONFIG_SIM68MD_PD_2
-							if (mConfig.pin_tx != -1)
+							if ((mPDVersion == EGPSPDVersion::PD2) && (mConfig.pin_tx != -1))
 							{
 								if (mConfig.pin_eint0 >= 0)
 								{
@@ -485,7 +610,6 @@ void SIM68MD::run()
 								}
 								uart_wait_tx_done(mConfig.port, 10);
 							}
-#endif
 						}
 						break;
 					case MSG_GPS_OFF:
@@ -667,14 +791,12 @@ bool SIM68MD::gps_decode(char *start, size_t length)
 							{
 								time(&mStart_time);
 								mWaitTime = mSearchTime;
-#ifndef CONFIG_SIM68MD_PD_2
-								if (mConfig.pin_tx != -1)
+								if ((mPDVersion != EGPSPDVersion::PD2) && (mConfig.pin_tx != -1))
 								{
 									uart_write_bytes(mConfig.port, cmd_auto_saving_enable, strlen(cmd_auto_saving_enable));
 									uart_wait_tx_done(mConfig.port, 10);
 									ESP_LOGI(TAG, "send %s", cmd_auto_saving_enable);
 								}
-#endif
 							}
 						}
 #endif

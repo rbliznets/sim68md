@@ -49,6 +49,16 @@ enum class EGPSMode
 };
 
 /**
+ * @brief GPS module power-down command protocol variant (auto-detected)
+ */
+enum class EGPSPDVersion
+{
+	Unknown = 0, ///< Not yet detected
+	PD1 = 1,	 ///< $PAIR command set
+	PD2 = 2		 ///< $PMTK command set
+};
+
+/**
  * @brief Geographic coordinates in NMEA format
  */
 struct SPosition
@@ -126,6 +136,8 @@ protected:
 
 	/** @brief Flag to track if this is the first start of the module */
 	static bool firstStart;
+	/** @brief Power-down command protocol version, auto-detected on first initUart() */
+	static EGPSPDVersion mPDVersion;
 	/** @brief Counter for invalid data delay */
 	uint16_t mDelayNonValid = GPS_INAVALID_DELAY;
 
@@ -169,6 +181,17 @@ protected:
 	 * Sets up UART communication parameters and activates the GPS module
 	 */
 	void initUart();
+
+	/**
+	 * @brief Auto-detect the module's power-down command protocol ($PAIR or $PMTK)
+	 * Probes the module with both command variants and identifies the protocol
+	 * from its acknowledgement. Falls back to the Kconfig default if the module
+	 * stays silent. Called once, on the very first initUart().
+	 */
+	void detectVersion();
+
+	/** @brief Apply mPDVersion to the active command strings */
+	void selectVersion();
 
 	/**
 	 * @brief Deactivate UART with power saving mode selection
