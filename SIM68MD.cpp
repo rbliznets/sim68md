@@ -8,6 +8,7 @@
 
 #include "SIM68MD.h"
 #include "CDateTimeSystem.h"
+#include "CNvsSystem.h"
 #include "CTrace.h"
 #include "driver/gpio.h"
 #include "esp_private/esp_gpio_reserve.h"
@@ -61,6 +62,7 @@ static const char *ack_mtk = "$PMTK001";
 
 #define GPS_PD_DETECT_ATTEMPTS 10		 ///< Number of UART event waits while probing the protocol
 #define GPS_PD_DETECT_TIMEOUT_MS 200 ///< Timeout per attempt (ms)
+#define NVS_GPS_PD_KEY "gpspd"		 ///< NVS key for the detected power-down protocol version
 
 bool SIM68MD::firstStart = false;
 EGPSPDVersion SIM68MD::mPDVersion = EGPSPDVersion::Unknown;
@@ -194,6 +196,18 @@ void SIM68MD::selectVersion()
 */
 void SIM68MD::detectVersion()
 {
+	uint8_t stored;
+	if (CNvsSystem::restore(NVS_GPS_PD_KEY, stored) != NVS_NONE)
+	{
+		if ((stored == (uint8_t)EGPSPDVersion::PD1) || (stored == (uint8_t)EGPSPDVersion::PD2))
+		{
+			mPDVersion = (EGPSPDVersion)stored;
+			ESP_LOGI(TAG, "GPS protocol restored from NVS");
+			selectVersion();
+			return;
+		}
+	}
+
 	uart_flush_input(mConfig.port);
 	uart_write_bytes(mConfig.port, cmd_on_pair, strlen(cmd_on_pair));
 	uart_write_bytes(mConfig.port, cmd_on_mtk, strlen(cmd_on_mtk));
@@ -246,6 +260,10 @@ void SIM68MD::detectVersion()
 		mPDVersion = EGPSPDVersion::PD2;
 #endif
 		ESP_LOGW(TAG, "GPS protocol autodetect got no answer, using Kconfig default");
+	}
+	else
+	{
+		CNvsSystem::save(NVS_GPS_PD_KEY, (uint8_t)mPDVersion);
 	}
 	selectVersion();
 }
