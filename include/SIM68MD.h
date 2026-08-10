@@ -79,6 +79,8 @@ struct SGPSData
 	SPosition longitude; ///< Longitude (from -180° to +180°)
 	SPosition latitude;	 ///< Latitude (from -90° to +90°)
 	float altitude;		 ///< Altitude above sea level (meters)
+	float speed;		 ///< Ground speed (km/h)
+	float course;		 ///< Ground course/track (degrees, 0-360, true north)
 	float hdop;			 ///< Horizontal positioning error
 };
 

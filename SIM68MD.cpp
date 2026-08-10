@@ -796,6 +796,9 @@ bool SIM68MD::gps_decode(char *start, size_t length)
 				mTime.tm_mon = pos->date_time.tm_mon;
 				mTime.tm_year = pos->date_time.tm_year;
 				mData.time = mktime(&mTime);
+				// Update speed and course (ground speed in knots -> km/h)
+				mData.speed = (float)(pos->gndspd_knots * 1.852);
+				mData.course = (float)pos->track_deg;
 				if (mEventSend)
 				{
 					if (mFixChanged)
