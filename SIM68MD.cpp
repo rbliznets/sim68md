@@ -409,7 +409,7 @@ void SIM68MD::initUart()
 			firstStart = false;
 		}
 		// Reset data and flags
-		mEventSend = false;
+		// mEventSend = false;
 		ESP_LOGI(TAG, "Run");
 	}
 }
