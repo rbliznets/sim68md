@@ -156,6 +156,11 @@ SIM68MD::~SIM68MD()
 
 	if ((mConfig.pin_eint_in >= 0) && (mConfig.pin_eint0 >= 0))
 	{
+		// Release the reservation made by gpio_config() in the constructor before reconfiguring
+		// the pins. Since IDF 6.1 gpio_config() reserves every pin configured as an output and
+		// never revokes it, so the call below (and any later user of these pins) would report
+		// "conflict found for GPIO[n]".
+		esp_gpio_revoke(BIT64(mConfig.pin_eint_in) | BIT64(mConfig.pin_eint0));
 		gpio_config_t io_conf = {BIT64(mConfig.pin_eint_in) | BIT64(mConfig.pin_eint0), GPIO_MODE_DISABLE, GPIO_PULLUP_DISABLE, GPIO_PULLDOWN_DISABLE, GPIO_INTR_DISABLE};
 		gpio_config(&io_conf);
 	}
