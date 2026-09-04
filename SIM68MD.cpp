@@ -310,43 +310,24 @@ void SIM68MD::initUart()
 		ESP_ERROR_CHECK(uart_pattern_queue_reset(mConfig.port, GPS_EVEN_BUF));
 		ESP_ERROR_CHECK(uart_flush(mConfig.port));
 
-		// Activate module via GPIO
+		// Пробуждение модуля по выводам EINT0 (выход из RTC) и EINT_IN (выход из sleep).
+		// Состояние Unknown - первый initUart() после сброса CPU: модуль не обесточивался
+		// и может быть в любом режиме, поэтому выполняются обе последовательности.
 		if ((mConfig.pin_eint_in >= 0) && (mConfig.pin_eint0 >= 0))
 		{
 			if ((mRun == EGPSMode::RTC) || (mRun == EGPSMode::Unknown))
 			{
+				// Выход из RTC: EINT0 вверх не менее 10 мс
 				gpio_set_level((gpio_num_t)mConfig.pin_eint0, 1);
 				vTaskDelay(pdMS_TO_TICKS(15));
 				gpio_set_level((gpio_num_t)mConfig.pin_eint0, 0);
 			}
 			if ((mRun == EGPSMode::Sleep) || (mRun == EGPSMode::Unknown))
 			{
+				// Выход из sleep: EINT_IN вниз не менее 10 мс, следом команда старта
 				gpio_set_level((gpio_num_t)mConfig.pin_eint_in, 0);
 				vTaskDelay(pdMS_TO_TICKS(15));
 				gpio_set_level((gpio_num_t)mConfig.pin_eint_in, 1);
-				if ((mRun == EGPSMode::Sleep) && (mConfig.pin_tx != -1) && (mPDVersion == EGPSPDVersion::PD1))
-				{
-					uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
-					ESP_LOGD(TAG, "send %s", cmd_on);
-					uart_wait_tx_done(mConfig.port, 50);
-				}
-			}
-			if ((mRun == EGPSMode::RTC) || (mRun == EGPSMode::Unknown))
-			{
-				if (mConfig.pin_tx != -1)
-				{
-					if (mRun == EGPSMode::Unknown)
-					{
-						detectVersion();
-					}
-					else
-					{
-						// Send power on command
-						uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
-						ESP_LOGD(TAG, "send %s", cmd_on);
-						uart_wait_tx_done(mConfig.port, 50);
-					}
-				}
 			}
 		}
 		else if (mConfig.onSleep != nullptr)
@@ -363,40 +344,21 @@ void SIM68MD::initUart()
 				vTaskDelay(pdMS_TO_TICKS(15));
 				mConfig.onSleep(1, 0);
 			}
-			if ((mRun == EGPSMode::RTC) || (mRun == EGPSMode::Unknown))
-			{
-				if (mConfig.pin_tx != -1)
-				{
-					if (mRun == EGPSMode::Unknown)
-					{
-						detectVersion();
-					}
-					else
-					{
-						// Send power on command
-						uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
-						ESP_LOGD(TAG, "send %s", cmd_on);
-						uart_wait_tx_done(mConfig.port, 50);
-					}
-				}
-			}
 		}
-		else
+
+		// Команда старта. Отправляется всегда: модуль выходит из sleep только по ней
+		// (импульса на EINT_IN мало), а после сброса CPU он остаётся в том режиме,
+		// в котором был до сброса.
+		if (mConfig.pin_tx != -1)
 		{
-			if (mConfig.pin_tx != -1)
+			if (mPDVersion == EGPSPDVersion::Unknown)
 			{
-				if (mRun == EGPSMode::Unknown)
-				{
-					detectVersion();
-				}
-				else
-				{
-					// Send power on command
-					uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
-					ESP_LOGD(TAG, "send %s", cmd_on);
-					uart_wait_tx_done(mConfig.port, 50);
-				}
+				// Определение протокола само отправляет команду старта обоих вариантов
+				detectVersion();
 			}
+			uart_write_bytes(mConfig.port, cmd_on, strlen(cmd_on));
+			ESP_LOGD(TAG, "send %s", cmd_on);
+			uart_wait_tx_done(mConfig.port, 50);
 		}
 		mRun = EGPSMode::Run;
 		if (firstStart)
@@ -511,6 +473,12 @@ void SIM68MD::run()
 				}
 				else
 				{
+					if (mFailed)
+					{
+						// Данных не было - режим модуля неизвестен, будим полностью
+						mFailed = false;
+						mRun = EGPSMode::Unknown;
+					}
 					// Reactivate search
 					initUart();
 					if (mSearchTime > 0)
@@ -679,12 +647,17 @@ void SIM68MD::run()
 					count_time = now;
 					if (mCount == 0)
 					{
+						// Следующая инициализация должна разбудить модуль полностью
+						mFailed = true;
 						// Call handler when no data
 						if (mConfig.onFailed != nullptr)
 							mConfig.onFailed(this);
 					}
 					else if (mCount > 0)
+					{
 						mCount = 0;
+						mFailed = false;
+					}
 				}
 			}
 		}

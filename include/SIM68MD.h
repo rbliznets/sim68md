@@ -158,6 +158,14 @@ protected:
 	bool mEventSend = false;
 	/** @brief Flag indicating if GPS fix status has changed */
 	bool mFixChanged = false;
+	/** @brief Модуль перестал выдавать NMEA - следующий initUart() будит его полностью */
+	/*!
+	  После пропажи данных режим модуля неизвестен: он мог сам уйти в короткий сон
+	  после позиционирования (SIM68MD Hardware Design, 3.4), и тогда команда старта
+	  без импульса на EINT_IN не выполняется. Поэтому повторная инициализация идёт
+	  как из состояния Unknown - с импульсами на обоих выводах.
+	*/
+	bool mFailed = false;
 
 	/** @brief Event queue set for managing multiple queues */
 	QueueSetHandle_t mQueueSet;
