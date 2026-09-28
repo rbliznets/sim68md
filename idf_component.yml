@@ -1,8 +1,7 @@
-version: "1.6.0"
+version: "1.6.1"
 description: SIM68MD Module 
 dependencies:
-  igrr/libnmea: "^0.2.1"
   task:
     version: "main"
     git: https://github.com/rbliznets/esp32-task.git
-  idf: ">=6.0.2"
+  idf: ">=6.1.0"

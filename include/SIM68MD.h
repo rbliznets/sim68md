@@ -16,10 +16,7 @@
 #include "driver/uart.h"
 #include <ctime>
 
-#include "nmea.h"
-#include "gpgga.h"
-#include "gprmc.h"
-#include "gpgsa.h"
+#include "nmea_parser.h"
 
 // UART configuration parameters
 #define GPS_TX_BUF (128 + 16)		   ///< UART transmit buffer size (bytes)
