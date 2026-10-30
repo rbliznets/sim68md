@@ -163,6 +163,18 @@ protected:
 	  как из состояния Unknown - с импульсами на обоих выводах.
 	*/
 	bool mFailed = false;
+	/** @brief Модуль молчит: в режиме Run нет NMEA дольше CONFIG_SIM68MD_NMEA_TIMEOUT */
+	/*!
+	  В отличие от mFailed не сбрасывается при повторной инициализации и сне модуля -
+	  только первым разобранным предложением NMEA.
+	*/
+	bool mSilent = false;
+	/** @brief Начало отсчёта работы без фиксации (esp_timer, мкс) */
+	int64_t mNoFixStart = 0;
+	/** @brief Число перезапусков модуля из-за долгого отсутствия фиксации */
+	uint16_t mRestarts = 0;
+	/** @brief Модуль перезапущен командой - его настройки сброшены */
+	bool mRestarted = false;
 
 	/** @brief Event queue set for managing multiple queues */
 	QueueSetHandle_t mQueueSet;
@@ -199,6 +211,12 @@ protected:
 
 	/** @brief Apply mPDVersion to the active command strings */
 	void selectVersion();
+
+	/**
+	 * @brief Перезапуск модуля, если NMEA идёт, а фиксации нет CONFIG_SIM68MD_NOFIX_RESTART минут
+	 * Вызывается раз в цикл задачи в режиме Run.
+	 */
+	void checkNoFix();
 
 	/**
 	 * @brief Deactivate UART with power saving mode selection
@@ -296,4 +314,17 @@ public:
 	 * Returns the current operating mode of the GPS module
 	 */
 	inline EGPSMode getState(){return mRun;};
+
+	/**
+	 * @brief Модуль молчит
+	 * @return true - в режиме Run не было NMEA дольше CONFIG_SIM68MD_NMEA_TIMEOUT и с тех пор
+	 * ни одного разобранного предложения
+	 */
+	inline bool isSilent() { return mSilent; }
+
+	/**
+	 * @brief Число перезапусков модуля из-за долгого отсутствия фиксации
+	 * @return Счётчик с момента запуска драйвера
+	 */
+	inline uint16_t getRestarts() { return mRestarts; }
 };

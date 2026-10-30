@@ -29,5 +29,15 @@ menu "SIM68MD"
         default 2
         help
             NMEA timeout in sec.
-                                                       
+
+    config SIM68MD_NOFIX_RESTART
+        int "Restart module after N minutes without fix"
+        range 0 1440
+        default 30
+        help
+            Если NMEA идёт, а фиксации нет столько минут подряд, модуль перезапускается
+            командой $PAIR023 ($PMTK103 для PMTK). Отсчёт идёт только в режиме Run и
+            начинается заново при каждом включении модуля, поэтому в режиме сеансов
+            поиска (короче этого времени) перезапуска не бывает. 0 - не перезапускать.
+
 endmenu

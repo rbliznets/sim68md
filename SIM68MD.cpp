@@ -12,6 +12,7 @@
 #include "CTrace.h"
 #include "driver/gpio.h"
 #include "esp_private/esp_gpio_reserve.h"
+#include "esp_timer.h"
 #include <cstring>
 #include <sys/time.h>
 
@@ -35,6 +36,7 @@ static const char *cmd_hot_on_pair = "$PAIR004*3E\r\n";
 static const char *cmd_off_pair = "$PAIR003*39\r\n";	  // Command to enter Standby mode
 static const char *cmd_rtc_pair = "$PAIR650,0*25\r\n"; // Command to enter Backup mode
 static const char *cmd_auto_saving_enable = "$PAIR490,1*2A\r\n$PAIR510,1*23\r\n";
+static const char *cmd_reboot_pair = "$PAIR023*3B\r\n"; // Reboot of the whole chip (settings are lost)
 
 static const char *cmd_on_mtk = "$PMTK101*32\r\n"; // Power on command
 static const char *cmd_hot_on_mtk = "$PMTK101*32\r\n";
@@ -42,6 +44,7 @@ static const char *cmd_off_mtk = "$PMTK161,1*29\r\n";				   // Command to enter 
 static const char *cmd_rtc_mtk = "$PMTK161,0*28\r\n";				   // Command to enter Backup mode
 static const char *cmd_on1 = "$PMTK225,0*2B\r\n$PMTK225,8*23\r\n"; // Command to enter AlwaysLocate Standby mode
 static const char *cmd_on2 = "$PMTK225,0*2B\r\n$PMTK225,9*22\r\n"; // Command to enter AlwaysLocate Backup mode
+static const char *cmd_reboot_mtk = "$PMTK103*30\r\n";				   // Cold restart (no chip reboot command in PMTK)
 
 // Active command set, selected once the protocol is known (Kconfig default until then)
 #ifdef CONFIG_SIM68MD_PD_1
@@ -49,11 +52,13 @@ static const char *cmd_on = cmd_on_pair;
 static const char *cmd_hot_on = cmd_hot_on_pair;
 static const char *cmd_off = cmd_off_pair;
 static const char *cmd_rtc = cmd_rtc_pair;
+static const char *cmd_reboot = cmd_reboot_pair;
 #else
 static const char *cmd_on = cmd_on_mtk;
 static const char *cmd_hot_on = cmd_hot_on_mtk;
 static const char *cmd_off = cmd_off_mtk;
 static const char *cmd_rtc = cmd_rtc_mtk;
+static const char *cmd_reboot = cmd_reboot_mtk;
 #endif
 
 // Acknowledgement prefixes used to identify the module's protocol
@@ -181,6 +186,7 @@ void SIM68MD::selectVersion()
 		cmd_hot_on = cmd_hot_on_pair;
 		cmd_off = cmd_off_pair;
 		cmd_rtc = cmd_rtc_pair;
+		cmd_reboot = cmd_reboot_pair;
 		ESP_LOGI(TAG, "GPS protocol: PAIR (PD1)");
 	}
 	else
@@ -189,6 +195,7 @@ void SIM68MD::selectVersion()
 		cmd_hot_on = cmd_hot_on_mtk;
 		cmd_off = cmd_off_mtk;
 		cmd_rtc = cmd_rtc_mtk;
+		cmd_reboot = cmd_reboot_mtk;
 		ESP_LOGI(TAG, "GPS protocol: PMTK (PD2)");
 	}
 }
@@ -361,6 +368,7 @@ void SIM68MD::initUart()
 			uart_wait_tx_done(mConfig.port, 50);
 		}
 		mRun = EGPSMode::Run;
+		mNoFixStart = esp_timer_get_time();
 		if (firstStart)
 		{
 			if (mConfig.pin_tx != -1)
@@ -374,6 +382,36 @@ void SIM68MD::initUart()
 		// mEventSend = false;
 		ESP_LOGI(TAG, "Run");
 	}
+}
+
+/*!
+	\brief Перезапуск модуля при долгом отсутствии фиксации
+	Модуль может выйти из провала питания в состояние, в котором NMEA идёт, а спутники
+	не ловятся (SIM68D Hardware Design, 3.1.4: перед повторным включением VCC должно быть
+	ниже 100 мВ не меньше 1 с). Пока модуль молчит, перезапуском занимается цикл
+	MSG_GPS_FAILED - RTC - EINT0, здесь отсчёт не идёт.
+*/
+void SIM68MD::checkNoFix()
+{
+#if CONFIG_SIM68MD_NOFIX_RESTART > 0
+	int64_t now = esp_timer_get_time();
+	if ((mData.valid != 0) || mSilent)
+	{
+		mNoFixStart = now;
+	}
+	else if ((now - mNoFixStart) > (int64_t)CONFIG_SIM68MD_NOFIX_RESTART * 60 * 1000000)
+	{
+		mNoFixStart = now;
+		mRestarts++;
+		mRestarted = true;
+		if (mConfig.pin_tx != -1)
+		{
+			uart_write_bytes(mConfig.port, cmd_reboot, strlen(cmd_reboot));
+			uart_wait_tx_done(mConfig.port, pdMS_TO_TICKS(50));
+		}
+		ESP_LOGW(TAG, "no fix %d min, send %s", CONFIG_SIM68MD_NOFIX_RESTART, cmd_reboot);
+	}
+#endif
 }
 
 /*!
@@ -540,6 +578,12 @@ void SIM68MD::run()
 										if (gps_decode(mBuf, read_len))
 										{
 											mCount++;
+											if (mSilent)
+											{
+												// Модуль снова отвечает - сообщить с ближайшим RMC
+												mSilent = false;
+												mEventSend = true;
+											}
 										}
 									}
 									else
@@ -649,6 +693,9 @@ void SIM68MD::run()
 					{
 						// Следующая инициализация должна разбудить модуль полностью
 						mFailed = true;
+						// Координаты без данных не подтверждаются: фиксация считается потерянной
+						mSilent = true;
+						mData.valid = 0;
 						// Call handler when no data
 						if (mConfig.onFailed != nullptr)
 							mConfig.onFailed(this);
@@ -660,6 +707,7 @@ void SIM68MD::run()
 					}
 				}
 			}
+			checkNoFix();
 		}
 		else
 		{
@@ -786,8 +834,11 @@ bool SIM68MD::gps_decode(char *start, size_t length)
 						// Synchronize system time
 						if (mData.valid != 0)
 						{
-							if (CDateTimeSystem::setDateTime(mData.time))
+							// После перезапуска командой настройки модуля сброшены - автосохранение
+							// включается заново, даже если часы уже верные
+							if (CDateTimeSystem::setDateTime(mData.time) || mRestarted)
 							{
+								mRestarted = false;
 								time(&mStart_time);
 								mWaitTime = mSearchTime;
 								if ((mPDVersion != EGPSPDVersion::PD2) && (mConfig.pin_tx != -1))
